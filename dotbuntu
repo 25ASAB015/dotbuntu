@@ -29,6 +29,11 @@ DOTBARE_TREE_DEFAULT="$HOME"
 ERROR_LOG="$HOME/.local/share/dotbuntu/install_errors.log"  # Log de errores
 mkdir -p "$(dirname "$ERROR_LOG")" 2>/dev/null || true       # Asegurar carpeta
 
+# Variables de estado global para el resumen final
+DOTBARE_INSTALLED_ACTION=""
+DOTBARE_READY=0
+DOTBARE_REMOTE_SUMMARY=""
+
 
 #==================================================
 # Logging y utilidades básicas
@@ -72,6 +77,14 @@ fmt_ms() {
 }
 
 # Manejo global de errores (definición del handler más abajo)
+
+# Limpieza condicional de pantalla (evitar borrar salida en modo debug)
+maybe_clear() {
+	if [ "${NO_CLEAR:-0}" = "1" ]; then
+		return 0
+	fi
+	command -v clear >/dev/null 2>&1 && clear || true
+}
 
 #==================================================
 # Encabezado / Metadata
@@ -210,10 +223,20 @@ run() {
 # Verifica que un comando exista; si falta, aborta con código 127
 require_cmd() {
 	name="$1"
-	command -v "$name" >/dev/null 2>&1 || {
-		log_error "No se encontró el comando requerido: $name"
-		exit 127
-	}
+	if command -v "$name" >/dev/null 2>&1; then
+		return 0
+	fi
+	# Fallback específico para dotbare: añadir posibles rutas y reintentar
+	if [ "$name" = "dotbare" ]; then
+		if [ -f "$HOME/.dotbare/dotbare" ]; then
+			export PATH="$HOME/.dotbare:$PATH:$HOME/.local/bin"
+		fi
+		if command -v "$name" >/dev/null 2>&1; then
+			return 0
+		fi
+	fi
+	log_error "No se encontró el comando requerido: $name"
+	exit 127
 }
 
 # Normaliza URL de repo a forma comparable (host/owner/repo)
@@ -235,9 +258,92 @@ normalize_repo_url() {
 	echo "$url" | tr '[:upper:]' '[:lower:]'
 }
 
+# Convierte una URL SSH de GitHub a HTTPS (solo GitHub)
+to_https_url() {
+	u="$1"
+	case "$u" in
+		git@github.com:*)
+			# git@github.com:owner/repo(.git) -> https://github.com/owner/repo.git
+			path="${u#git@github.com:}"
+			# Asegurar sufijo .git
+			case "$path" in
+				*.git) : ;;
+				*) path="${path}.git" ;;
+			esac
+			printf "%s" "https://github.com/${path}"
+			;;
+		https://github.com/*)
+			printf "%s" "$u"
+			;;
+		*)
+			# No soportado: devolver tal cual
+			printf "%s" "$u"
+			;;
+	esac
+}
+
 # Comprueba si un paquete apt está instalado
 is_installed_apt() {
 	dpkg -s "$1" >/dev/null 2>&1
+}
+
+#==================================================
+# Resumen final
+#==================================================
+final_summary() {
+	printf "\n%bResumen final%b\n" "${BLD}${CBL}" "${CNC}"
+	# Resumen APT si existen variables del bloque (pueden no existir si falla antes)
+	if [ -n "${apt_already-}" ] || [ -n "${apt_installed_ok-}" ] || [ -n "${apt_failed-}" ]; then
+		printf "  - APT presentes: %s\n" "${apt_already[*]:-desconocido}"
+		printf "  - APT instalados: %s\n" "${apt_installed_ok[*]:-ninguno}"
+		printf "  - APT fallidos: %s\n" "${apt_failed[*]:-ninguno}"
+	else
+		printf "  - APT: resumen no disponible (saltado o error temprano)\n"
+	fi
+
+	# Resumen dotbare
+	if [ "$DOTBARE_READY" -eq 1 ]; then
+		printf "  - dotbare: listo (%s)\n" "${DOTBARE_REMOTE_SUMMARY}"
+	else
+		printf "  - dotbare: no quedó listo\n"
+	fi
+
+	# Sugerencia final
+	printf "\n%bSiguiente paso:%b abre una nueva shell o 'source ~/.bashrc' para aplicar cambios.\n" "${BLD}${CGR}" "${CNC}"
+}
+
+# Ofrecer relanzar si hubo fallos APT; limpia dotbare y repo bare antes
+offer_relaunch_on_failures() {
+	# Si no hay lista de fallos disponible o vacía, no hacer nada
+	if [ -z "${apt_failed-}" ] || [ ${#apt_failed[@]} -eq 0 ]; then
+		return 0
+	fi
+
+	printf "\n%bSe detectaron paquetes con fallo:%b %s\n" "${BLD}${CYE}" "${CNC}" "${apt_failed[*]}"
+	printf "  - Instalación manual sugerida: sudo apt-get install -y %s\n" "${apt_failed[*]}"
+
+	if [ -t 0 ]; then
+		printf "\n%b¿Deseas relanzar la instalación completa?%b\n" "${BLD}${CBL}" "${CNC}"
+		printf "Esto borrará %s y %s y volverá a ejecutar el script. [s/N]: " "~/.cfg" "~/.dotbare"
+		read -r yn
+		case "$yn" in
+			[SsYy])
+				step "Eliminar ~/.cfg y ~/.dotbare"
+				if [ "${DRY_RUN:-0}" -eq 1 ]; then
+					log "   ↳ (dry-run) rm -rf \"$HOME/.cfg\" \"$HOME/.dotbare\""
+				else
+					rm -rf "$HOME/.cfg" "$HOME/.dotbare"
+				fi
+				info "Relanzando instalador…"
+				exec "$0" "$@"
+				;;
+			*)
+				info "Continuando sin relanzar. Puedes hacerlo luego manualmente: rm -rf ~/.cfg ~/.dotbare && bash $0"
+				;;
+		esac
+	else
+		warn "Modo no interactivo: No se relanza automáticamente. Para relanzar: rm -rf ~/.cfg ~/.dotbare && bash $0"
+	fi
 }
 
 #==================================================
@@ -246,7 +352,7 @@ is_installed_apt() {
 
 # Mensaje de bienvenida y confirmación de continuación
 welcome() {
-	clear
+	maybe_clear
 	logo "Bienvenido a dotbuntu (Ubuntu/WSL/Codespaces), $USER"
 
 	printf "%b" "${BLD}${CGR}Este script instalará y configurará tus dotfiles con dotbare:${CNC}
@@ -283,24 +389,61 @@ ${BLD}${CGR}[${CRE}!${CGR}]${CNC} ${BLD}${CRE}No se modifican archivos críticos
 
 # Instala paquetes desde repos oficiales si faltan (tree, bat/batcat, etc.)
 install_apt_dependencies() {
-	clear
+	maybe_clear
 	logo "Instalando dependencias (apt)"
 	sleep 1
 
 	run "Actualizar índices de paquetes" sudo apt-get update -y
 
-	# Paquetes base
-	apt_packages=(git curl ca-certificates tree highlight ruby-full git-delta diff-so-fancy)
+	# Paquetes base diff-so-fancy
+	apt_packages=(git curl ca-certificates tree highlight ruby-full git-delta)
 
-	missing_pkgs=()
+	# Inyectar fallo de prueba si TEST_FAIL_APT está definido
+	if [ -n "${TEST_FAIL_APT:-}" ] && [ "${TEST_FAIL_APT}" != "0" ]; then
+		fake_pkg="$TEST_FAIL_APT"
+		if [ "$fake_pkg" = "1" ]; then
+			fake_pkg="pkg-que-no-existe-para-probar"
+		fi
+		apt_packages+=("$fake_pkg")
+		warn "Modo prueba: agregando paquete ficticio '$fake_pkg' para forzar fallo"
+	fi
+
+	# Trackers de estado
+	apt_already=()
+	apt_to_install=()
+	apt_installed_ok=()
+	apt_failed=()
+
+	# Estado especial para bat/batcat y coderay
+	bat_status=""
+	coderay_status=""
+
+	# Clasificar paquetes entre presentes y por instalar
 	for pkg in "${apt_packages[@]}"; do
-		if ! is_installed_apt "$pkg"; then
-			missing_pkgs+=("$pkg")
+		if is_installed_apt "$pkg"; then
+			apt_already+=("$pkg")
+		else
+			apt_to_install+=("$pkg")
 		fi
 	done
 
-	if [ ${#missing_pkgs[@]} -gt 0 ]; then
-		run "Instalar paquetes: ${missing_pkgs[*]}" sudo apt-get install -y "${missing_pkgs[@]}"
+	# Instalación individual para capturar fallos por paquete
+	if [ ${#apt_to_install[@]} -gt 0 ]; then
+		for pkg in "${apt_to_install[@]}"; do
+			if [ "${DRY_RUN:-0}" -eq 1 ]; then
+				step "(dry-run) Instalar paquete: $pkg"
+				apt_installed_ok+=("$pkg")
+				continue
+			fi
+			step "Instalar paquete: $pkg"
+			if sudo apt-get install -y "$pkg" >/dev/null 2>>"$ERROR_LOG"; then
+				apt_installed_ok+=("$pkg")
+				info "✔ $pkg instalado"
+			else
+				apt_failed+=("$pkg")
+				warn "✖ Falló la instalación de $pkg"
+			fi
+		done
 	else
 		info "Paquetes base ya presentes"
 	fi
@@ -309,13 +452,31 @@ install_apt_dependencies() {
 	if ! command -v bat >/dev/null 2>&1; then
 		if command -v batcat >/dev/null 2>&1; then
 			# Crear alias/compatibilidad
-			run "Crear alias bat→batcat" sudo ln -sf "$(command -v batcat)" /usr/local/bin/bat
+			if [ "${DRY_RUN:-0}" -eq 1 ]; then
+				step "(dry-run) Crear alias bat→batcat"
+				bat_status="alias_creado(dry-run)"
+			else
+				run "Crear alias bat→batcat" sudo ln -sf "$(command -v batcat)" /usr/local/bin/bat
+				bat_status="alias_creado"
+			fi
 		else
 			# Intento instalar bat
 			if ! is_installed_apt bat; then
-				run "Instalar batcat (compatibilidad)" sudo apt-get install -y bat
-				if ! command -v bat >/dev/null 2>&1 && command -v batcat >/dev/null 2>&1; then
-					run "Crear alias bat→batcat" sudo ln -sf "$(command -v batcat)" /usr/local/bin/bat
+				if [ "${DRY_RUN:-0}" -eq 1 ]; then
+					step "(dry-run) Instalar bat"
+					bat_status="instalado(dry-run)"
+				else
+					if sudo apt-get install -y bat >/dev/null 2>>"$ERROR_LOG"; then
+						bat_status="instalado"
+						if ! command -v bat >/dev/null 2>&1 && command -v batcat >/dev/null 2>&1; then
+							run "Crear alias bat→batcat" sudo ln -sf "$(command -v batcat)" /usr/local/bin/bat
+							bat_status="instalado+alias"
+						fi
+					else
+						bat_status="fallo_instalar"
+						apt_failed+=("bat")
+						warn "✖ Falló la instalación de bat"
+					fi
 				fi
 			fi
 		fi
@@ -326,32 +487,122 @@ install_apt_dependencies() {
 		warn "RubyGems no encontrado. Se intentó instalar ruby-full anteriormente."
 	else
 		if ! gem list -i coderay >/dev/null 2>&1; then
-			run "Instalar gem coderay" sudo gem install coderay --no-document
+			if [ "${DRY_RUN:-0}" -eq 1 ]; then
+				step "(dry-run) Instalar gem coderay"
+				coderay_status="instalado(dry-run)"
+			else
+				if sudo gem install coderay --no-document >/dev/null 2>>"$ERROR_LOG"; then
+					coderay_status="instalado"
+					info "✔ gem coderay instalado"
+				else
+					coderay_status="fallo_instalar"
+					warn "✖ Falló la instalación de gem coderay"
+				fi
+			fi
 		fi
+	fi
+
+	# Resumen de resultados
+	printf "\n%bResumen de dependencias:%b\n" "${BLD}${CBL}" "${CNC}"
+	printf "  - APT presentes: %s\n" "${apt_already[*]:-ninguno}"
+	printf "  - APT instalados: %s\n" "${apt_installed_ok[*]:-ninguno}"
+	printf "  - APT fallidos: %s\n" "${apt_failed[*]:-ninguno}"
+	[ -n "$bat_status" ] && printf "  - bat/batcat: %s\n" "$bat_status"
+	[ -n "$coderay_status" ] && printf "  - gem coderay: %s\n" "$coderay_status"
+
+	# Reintento interactivo si hubo fallos
+	while [ ${#apt_failed[@]} -gt 0 ]; do
+		printf "\n%bSe detectaron fallos (%d). ¿Reintentar instalación de los fallidos?%b [s/N]: " "${BLD}${CYE}" "${#apt_failed[@]}" "${CNC}"
+		read -r yn || yn=""
+		case "$yn" in
+			[SsYy])
+				# Intentar nuevamente sólo los fallidos
+				fails=("${apt_failed[@]}")
+				apt_failed=()
+				run "Actualizar índices de paquetes" sudo apt-get update -y
+				for pkg in "${fails[@]}"; do
+					if is_installed_apt "$pkg"; then
+						# Ya quedó instalado por otros medios
+						apt_already+=("$pkg")
+						continue
+					fi
+					step "Reintentar instalar: $pkg"
+					if sudo apt-get install -y "$pkg" >/dev/null 2>>"$ERROR_LOG"; then
+						apt_installed_ok+=("$pkg")
+						info "✔ $pkg instalado tras reintento"
+					else
+						apt_failed+=("$pkg")
+						warn "✖ Persistió el fallo instalando $pkg"
+					fi
+				done
+				printf "\n%bResultado tras reintento:%b\n" "${BLD}${CBL}" "${CNC}"
+				printf "  - APT aún fallidos: %s\n" "${apt_failed[*]:-ninguno}"
+				;;
+			*)
+				break
+				;;
+		esac
+	done
+
+	# Nota final si siguen fallos
+	if [ ${#apt_failed[@]} -gt 0 ]; then
+		warn "Algunos paquetes no se pudieron instalar: ${apt_failed[*]}"
+		warn "Puedes relanzar este módulo ejecutando nuevamente el script y eligiendo continuar."
+	fi
+
+	# Pausa para leer el resumen antes de continuar (solo en TTY)
+	if [ -t 0 ] && [ "${NO_PAUSE:-0}" != "1" ]; then
+		printf "%b" "${BLD}${CBL}Revisa el resumen arriba. Pulsa Enter para continuar... ${CNC}"
+		read -r _
 	fi
 }
 
 # Instala dotbare (vía script oficial) si falta
 install_dotbare() {
-	clear
+	maybe_clear
 	logo "Instalando dotbare"
 	sleep 1
 
 	if command -v dotbare >/dev/null 2>&1; then
 		info "dotbare ya instalado"
+		DOTBARE_INSTALLED_ACTION="ya-presente"
 		return 0
 	fi
 
 	# Método recomendado por upstream
-	run "Descargar e instalar dotbare" bash -c "curl -fsSL https://raw.githubusercontent.com/kazhala/dotbare/master/install.sh | bash" || true
+	run "Descargar e instalar dotbare" bash -c "git clone https://github.com/kazhala/dotbare.git ~/.dotbare" 
 
-	if ! command -v dotbare >/dev/null 2>&1; then
-		log_error "dotbare no se pudo instalar automáticamente."
+	if [ ! -f "$HOME/.dotbare/dotbare" ]; then
+		log_error "dotbare no se pudo instalar automáticamente (no se encontró ~/.dotbare/dotbare)."
 		printf "%b\n" "${BLD}${CYE}Instálalo manualmente desde: https://github.com/kazhala/dotbare${CNC}"
 		return 1
 	fi
 
 	info "dotbare instalado correctamente"
+	DOTBARE_INSTALLED_ACTION="instalado"
+	# Añadir automáticamente el source al .bashrc si no existe
+	if ! grep -q "source ~/.dotbare/dotbare.plugin.bash" "$HOME/.bashrc" 2>/dev/null; then
+		echo "source ~/.dotbare/dotbare.plugin.bash" >> "$HOME/.bashrc"
+		info "Se agregó 'source ~/.dotbare/dotbare.plugin.bash' a ~/.bashrc"
+	else
+		debug "El source de dotbare ya está presente en ~/.bashrc"
+	fi
+
+	# Añadir export PATH y alias a .bashrc y .zshrc si existen
+	for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
+		if [ -f "$rc" ]; then
+			# Asegurar ~/.dotbare al inicio del PATH y ~/.local/bin al final
+			if ! grep -q 'export PATH="\$HOME/.dotbare:\$PATH"' "$rc" && ! grep -q 'export PATH=.*\$HOME/.dotbare' "$rc"; then
+				echo 'export PATH="$HOME/.dotbare:$PATH"' >> "$rc"
+				info "Se agregó 'export PATH=\"$HOME/.dotbare:$PATH\"' a $rc"
+			fi
+			if ! grep -q 'export PATH="\$PATH:\$HOME/.local/bin"' "$rc" && ! grep -q 'export PATH=.*\$HOME/.local/bin' "$rc"; then
+				echo 'export PATH="$PATH:$HOME/.local/bin"' >> "$rc"
+				info "Se agregó 'export PATH=\"$PATH:$HOME/.local/bin\"' a $rc"
+			fi
+			# No es necesario alias si ~/.dotbare está en PATH
+		fi
+	done
 }
 
 #==================================================
@@ -360,12 +611,15 @@ install_dotbare() {
 
 # Configura dotbare (repo bare de dotfiles) y ajusta remoto si es necesario
 configure_dotbare() {
-	clear
+	maybe_clear
 	logo "Configurando dotbare"
 	sleep 1
 
 	printf "%b\n" "${BLD}${CBL}Preparando dotbare para gestionar tus dotfiles...${CNC}"
 	sleep 1
+
+	# Asegurar que dotbare sea resoluble en la sesión actual
+	export PATH="$HOME/.dotbare:$PATH:$HOME/.local/bin"
 
 	require_cmd dotbare
 
@@ -401,6 +655,12 @@ configure_dotbare() {
 		else
 			printf "%b\n" "${BLD}${CRE}${DOTBARE_DIR} existe pero no parece un repo bare.${CNC}"
 			if [ "$FORCE" -eq 1 ]; then
+
+					# Recargar .bashrc para aplicar los cambios en la sesión actual
+					if [ -f "$HOME/.bashrc" ]; then
+						source "$HOME/.bashrc"
+						info ".bashrc recargado para aplicar cambios de dotbare"
+					fi
 				printf "%b\n" "${BLD}${CYE}Moviendo directorio conflictivo a respaldo...${CNC}"
 				if mv "$DOTBARE_DIR" "${DOTBARE_DIR}.bak_$(date +%s)" 2>>"$ERROR_LOG"; then
 					printf "%b\n" "${BLD}${CGR}Respaldo realizado correctamente.${CNC}"
@@ -418,6 +678,14 @@ configure_dotbare() {
 
 	if [ ! -d "$DOTBARE_DIR" ]; then
 		printf "%b\n" "${BLD}${CBL}Inicializando dotbare con tu repositorio...${CNC}"
+		# Validar acceso al remoto; si SSH falla, intentar HTTPS
+		if ! git ls-remote "$REPO_URL" >/dev/null 2>>"$ERROR_LOG"; then
+			alt_url="$(to_https_url "$REPO_URL")"
+			if [ "$alt_url" != "$REPO_URL" ] && git ls-remote "$alt_url" >/dev/null 2>>"$ERROR_LOG"; then
+				info "No se pudo acceder vía SSH, usando HTTPS: $alt_url"
+				REPO_URL="$alt_url"
+			fi
+		fi
 		if dotbare finit -u "$REPO_URL" 2>>"$ERROR_LOG"; then
 			printf "%b\n" "${BLD}${CGR}dotbare inicializado correctamente!${CNC}"
 		else
@@ -428,6 +696,8 @@ configure_dotbare() {
 	fi
 
 	printf "%b\n" "${BLD}${CGR}dotbare listo! (${CBL}${DOTBARE_DIR}${CGR} ↔ ${CBL}${REPO_URL}${CGR})${CNC}"
+	DOTBARE_READY=1
+	DOTBARE_REMOTE_SUMMARY="${DOTBARE_DIR} ↔ ${REPO_URL}"
 	sleep 1
 }
 
@@ -491,6 +761,8 @@ main() {
 	install_apt_dependencies
 	install_dotbare
 	configure_dotbare
+	final_summary
+	offer_relaunch_on_failures "$@"
 }
 
 main "$@"
