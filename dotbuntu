@@ -603,6 +603,20 @@ install_dotbare() {
 			# No es necesario alias si ~/.dotbare está en PATH
 		fi
 	done
+
+	# Wrapper en ~/.local/bin/dotbare para evitar problemas con symlinks y helpers
+	# BASH_SOURCE debe apuntar a ~/.dotbare/dotbare para que ${mydir}/helper funcione
+	mkdir -p "$HOME/.local/bin"
+	target="$HOME/.local/bin/dotbare"
+	if [ -L "$target" ] || [ -f "$target" ]; then
+		rm -f "$target"
+	fi
+	cat >"$target" <<'WRAP'
+#!/usr/bin/env bash
+exec "$HOME/.dotbare/dotbare" "$@"
+WRAP
+	chmod +x "$target"
+	info "Wrapper instalado en ~/.local/bin/dotbare (helpers resueltos correctamente)"
 }
 
 #==================================================
