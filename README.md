@@ -1,21 +1,21 @@
-<div align = "center">
+<div align="center">
 
-<h1>dorbuntu — Dotfiles en Ubuntu/WSL/Codespaces</h1>
+<h1>dotbuntu — Dotfiles en Ubuntu/WSL/Codespaces</h1>
 
 <br/>
 <br/>
 
-<img src="images/screenshot.png" alt="Dotfiles en acción" width="720" />
+<img src="images/screenshot.png" alt="dotbuntu en acción" width="720" />
 
 </div>
 
-### ¿Qué es dorbuntu?
+### ¿Qué es dotbuntu?
 
-`dorbuntu` es un único script que instala lo necesario y configura tus dotfiles de forma segura y guiada usando `dotbare`. Está pensado para Ubuntu/Debian, WSL y GitHub Codespaces.
+`dotbuntu` es un script único que instala dependencias y configura tus dotfiles de forma segura y guiada usando `dotbare`. Funciona en Ubuntu/Debian, WSL y GitHub Codespaces.
 
-- **Seguro**: validaciones antes de actuar (conexión, entorno compatible, no ejecuta como root).
-- **Claro**: mensajes explicativos y pasos ordenados.
-- **Sencillo**: puedes indicar la URL de tu repositorio de dotfiles como parámetro.
+- Seguro: validaciones de entorno, no corre como root, checks de conexión.
+- Claro: mensajes explicativos, resúmenes y confirmaciones.
+- Sencillo: indica tu repo de dotfiles y listo.
 
 ---
 
@@ -25,13 +25,14 @@
 - [Instalación rápida](#instalación-rápida)
 - [Uso básico](#uso-básico)
 - [Opciones disponibles](#opciones-disponibles)
-- [Paso a paso: ¿Qué hace exactamente?](#qué-hace-exactamente)
-- [Qué cambia y qué NO cambia](#qué-cambia-y-qué-no-cambia)
-- [Ejemplos prácticos](#ejemplos-prácticos)
+- [¿Qué hace exactamente?](#qué-hace-exactamente)
+- [Resumenes y reintentos](#resumenes-y-reintentos)
+- [Relanzar instalación](#relanzar-instalación)
 - [Variables de entorno útiles](#variables-de-entorno-útiles)
-- [Solución de problemas (en lenguaje claro)](#solución-de-problemas-en-lenguaje-claro)
+- [Ejemplos prácticos](#ejemplos-prácticos)
+- [Solución de problemas](#solución-de-problemas)
 - [FAQ](#faq)
-- [Desinstalación (manual)](#desinstalación-manual)
+- [Desinstalación](#desinstalación)
 - [Créditos](#créditos)
 
 ### Requisitos
@@ -43,135 +44,156 @@
 ### Instalación rápida
 
 ```bash
-git clone https://github.com/25ASAB015/dotmarchy "$HOME/.local/share/dotmarchy"
-bash "$HOME/.local/share/dotmarchy/dorbuntu"
+git clone https://github.com/25ASAB015/dotbuntu
+cd dotbuntu
+bash dotbuntu
 ```
 
-Sugerencia: ejecuta el script desde tu carpeta personal. Si no estás en `~`, ejecuta primero:
+Sugerido: ejecuta desde tu `HOME` para evitar confusión de rutas:
 
 ```bash
-cd ~
+cd ~ && bash /ruta/al/repo/dotbuntu/dotbuntu
 ```
 
 ### Uso básico
 
 ```bash
-# Ejecutar con el repositorio por defecto incluido en el script
-bash dorbuntu
+# Ejecutar con el repositorio por defecto del script
+bash dotbuntu
 
 # O indicando tu repositorio (HTTPS o SSH)
-bash dorbuntu https://github.com/usuario/mis-dotfiles.git
-bash dorbuntu git@github.com:usuario/mis-dotfiles.git
+bash dotbuntu --repo https://github.com/usuario/mis-dotfiles.git
+bash dotbuntu git@github.com:usuario/mis-dotfiles.git
 ```
 
-El script instalará lo necesario y configurará `dotbare` apuntando al repositorio que indiques (o al predeterminado del script si no pasas ninguno).
+El script instalará lo necesario y configurará `dotbare` apuntando al repo que indiques.
 
 ### Opciones disponibles
 
-- **--repo URL**: URL del repo de dotfiles para `dotbare` (equivalente a pasarlo como argumento posicional).
-- **-h, --help**: muestra ayuda y ejemplos de uso.
+- `--repo URL`: URL del repo de dotfiles para `dotbare` (equivale a argumento posicional).
+- `-h`, `--help`: muestra ayuda y ejemplos.
 
 Notas:
-- Si indicas tanto `--repo URL` como un argumento posicional, el último leído tiene prioridad.
-- El script puede solicitar tu contraseña de `sudo` para instalar paquetes.
+- Si indicas `--repo` y además un argumento posicional, tiene prioridad el último leído.
+- Puede solicitar tu contraseña de `sudo` para instalar paquetes.
 
 ### ¿Qué hace exactamente?
 
-1. Verifica que estás en Ubuntu/Debian (requiere `apt`) y que no lo ejecutas como `root`.
-2. Sugiere ejecutar desde tu `HOME` y detecta si estás en WSL o Codespaces (solo informativo).
-3. Comprueba conexión a internet (intentando acceder a `github.com`).
-4. Instala paquetes desde repos oficiales con `apt` (ej.: `git`, `curl`, `tree`, `highlight`, `ruby-full`, `git-delta`, `diff-so-fancy`).
-5. Ajusta compatibilidad `bat`/`batcat` (crea alias `bat` si solo existe `batcat`).
-6. Instala `dotbare` vía script oficial si no está presente.
-7. Configura `dotbare` de forma segura e idempotente:
-   - Usa `DOTBARE_DIR` (por defecto `~/.cfg`) y `DOTBARE_TREE` (por defecto `~`).
-   - Si `~/.cfg` ya existe como repo bare, respeta el remoto actual (no lo sobrescribe automáticamente).
-   - Si `~/.cfg` existe pero no es un repo bare, se detiene con un mensaje claro para que decidas cómo proceder.
+1. Verifica entorno: Ubuntu/Debian, no root, conexión a internet. Detecta WSL/Codespaces (informativo).
+2. Instala dependencias con `apt` si faltan: `git`, `curl`, `ca-certificates`, `tree`, `highlight`, `ruby-full`, `git-delta`.
+3. `bat`/`batcat`: crea alias `bat` si solo existe `batcat`.
+4. Instala `coderay` (gem) si está disponible `gem`.
+5. Muestra un Resumen APT: presentes, instalados, fallidos (con pausa opcional para leer).
+6. Reintenta instalar paquetes fallidos si aceptas.
+7. Instala `dotbare` (clone a `~/.dotbare`) y añade su plugin/`PATH` a `~/.bashrc`/`~/.zshrc`.
+8. Configura `dotbare` en `DOTBARE_DIR` (por defecto `~/.cfg`) y `DOTBARE_TREE` (por defecto `~`).
+   - Si SSH al repo falla, intenta automáticamente por HTTPS.
+   - Si `~/.cfg` existe y es repo bare, respeta el remoto (no lo cambia sin forzar).
+9. Muestra un Resumen final: APT (presentes/instalados/fallidos) y estado de `dotbare` (ruta ↔ remoto).
+10. Registra errores en `~/.local/share/dotbuntu/install_errors.log`.
 
-Tiempo estimado: 2-10 minutos (según tu conexión y paquetes ya instalados).
+Tiempo estimado: 2-10 minutos (según conexión y paquetes previos).
 
-Al finalizar, verás un mensaje de resumen indicando que todo salió bien.
+### Resumenes y reintentos
 
----
+- Resumen APT (al terminar la fase de paquetes):
+  - APT presentes, APT instalados, APT fallidos.
+  - Estado de `bat/batcat` y `gem coderay`.
+- Reintento interactivo: si hay fallos, puedes reintentar la instalación solo de los fallidos.
+- Pausa para leer: se detiene esperando Enter (omite con `NO_PAUSE=1`).
 
-### Qué cambia y qué NO cambia
+### Relanzar instalación
 
-- **Sí cambia**
-  - Instala paquetes del sistema (con `apt`).
-  - Configura `dotbare` para gestionar tu repo de dotfiles.
-- **No cambia**
-  - No modifica archivos críticos del sistema.
-  - No reemplaza un remoto existente de `dotbare` si ya apunta a otro repo.
+Si al final aún hay paquetes fallidos, el script:
+- Sugerirá instalarlos manualmente con: `sudo apt-get install -y ...`.
+- Ofrecerá relanzar la instalación completa. Si aceptas:
+  - Elimina `~/.cfg` y `~/.dotbare`.
+  - Relanza el script con los mismos argumentos.
 
-### Ejemplos prácticos
-
-```bash
-# Ejecutar con el repo por defecto
-bash dorbuntu
-
-# Elegir un repositorio distinto
-bash dorbuntu --repo https://github.com/usuario/mis-dotfiles.git
-bash dorbuntu git@github.com:usuario/mis-dotfiles.git
-
-# Ejecutar desde cualquier ubicación (asegúrate de estar en ~)
-cd ~ && bash ~/.local/share/dotmarchy/dorbuntu --repo https://github.com/usuario/mis-dotfiles.git
-```
+En modo no interactivo (sin TTY) no relanza automáticamente; muestra cómo hacerlo manualmente.
 
 ### Variables de entorno útiles
 
-- `DOTBARE_DIR`: ruta al repositorio bare de dotbare (defecto: `~/.cfg`).
-- `DOTBARE_TREE`: directorio de trabajo para dotfiles (defecto: `~`).
+- `DOTBARE_DIR`: ruta del repo bare (defecto: `~/.cfg`).
+- `DOTBARE_TREE`: working tree de tus dotfiles (defecto: `~`).
+- `NO_CLEAR=1`: no limpiar la pantalla entre pasos.
+- `NO_PAUSE=1`: no pausar tras el Resumen APT.
+- `VERBOSE=1`: mostrar comandos/tiempos con más detalle.
+- `DRY_RUN=1`: simular acciones (no modifica tu sistema).
+- `TEST_FAIL_APT=1` o `=nombre`: forzar fallo APT (útil para probar reintentos/relanzar).
+- `FORCE=1`: al configurar `dotbare`, permite respaldar directorios en conflicto y actualizar el remoto existente.
 
 Ejemplo:
 
 ```bash
-DOTBARE_DIR="$HOME/.dotfiles.git" DOTBARE_TREE="$HOME" bash dorbuntu --repo https://github.com/usuario/mis-dotfiles.git
+NO_CLEAR=1 VERBOSE=1 bash dotbuntu --repo https://github.com/usuario/mis-dotfiles.git
 ```
 
-### Solución de problemas (en lenguaje claro)
-
-- «Este script está pensado para Ubuntu/Debian»: tu sistema no tiene `apt`.
-- Error al instalar paquetes: revisa tu conexión a internet y vuelve a ejecutar.
-- Ya tengo `~/.cfg` con mis dotfiles: dorbuntu respetará tu configuración actual y no la sobrescribirá.
-- Permisos de `sudo`: puede pedir tu contraseña para instalar paquetes; es normal.
-
-Si algo falla, revisa el archivo de registro:
+### Ejemplos prácticos
 
 ```bash
-cat "$HOME/.local/share/dorbuntu/install_errors.log"
+# Repo por defecto
+bash dotbuntu
+
+# Elegir un repositorio
+bash dotbuntu --repo https://github.com/usuario/mis-dotfiles.git
+bash dotbuntu git@github.com:usuario/mis-dotfiles.git
+
+# Probar flujo de fallos y reintentos
+TEST_FAIL_APT=1 NO_CLEAR=1 bash dotbuntu
+
+# Forzar manejo de remoto y conflictos (avanzado)
+FORCE=1 bash dotbuntu --repo git@github.com:usuario/mis-dotfiles.git
 ```
 
----
+### Solución de problemas
+
+- «Este script está pensado para Ubuntu/Debian»: tu sistema no tiene `apt`.
+- Sin conexión: revisa red/Proxy; el script intenta HTTPS y ping a 8.8.8.8.
+- Fallos APT: usa el reintento o instala manualmente los listados en el Resumen APT.
+- SSH al repo falla: el script intenta automáticamente por HTTPS si es GitHub.
+- `~/.cfg` existe pero no es repo bare: el script pedirá que ejecutes con `FORCE=1` para respaldar y continuar.
+
+Logs de errores:
+
+```bash
+cat "$HOME/.local/share/dotbuntu/install_errors.log"
+```
 
 ### FAQ
 
 **¿Dónde se guardan mis dotfiles?**  
-En un repo bare (sin working tree propio) en `~/.cfg`, gestionado por `dotbare`. Tu `$HOME` es el working tree.
+En `~/.cfg` (repo bare gestionado por `dotbare`). Tu `$HOME` es el working tree.
 
 **¿Puedo cambiar el repositorio de dotfiles más tarde?**  
-Sí. Ejecuta de nuevo el script con otra URL. Si ya tenías un remoto distinto configurado, el script te avisará y no lo cambiará automáticamente.
+Sí. Ejecuta de nuevo con otra URL. Si hay un remoto distinto, el script te lo indicará (puedes usar `FORCE=1`).
 
-**¿Necesito usar Git/SSH?**  
-No. Puedes usar una URL HTTPS. Si eliges SSH (`git@github.com:...`), necesitarás tener tus llaves configuradas.
+**¿Necesito SSH?**  
+No. Puedes usar HTTPS. Con SSH necesitas llaves configuradas.
 
-**¿Debo ejecutar el script como root?**  
-No. El script te lo impedirá. Usa tu usuario normal y proporciona `sudo` cuando se requiera.
+**¿Debo ejecutar como root?**  
+No. El script lo impide. Usa tu usuario normal con `sudo` cuando se solicite.
 
-### Desinstalación (manual)
+### Desinstalación
 
-dorbuntu instala paquetes del sistema y configura `dotbare`. Para revertir cambios:
+Para revertir:
 
 ```bash
-# Quitar dotbare (opcional)
-sudo apt-get remove -y dotbare || true  # Si lo instalaste como paquete; si fue via script, omitir
+# Quitar dotbare instalado por script
+rm -rf "$HOME/.dotbare"
 
-# Respaldar/eliminar el repositorio bare (¡cuidado!)
+# Quitar repo bare de dotfiles (respalda antes si lo necesitas)
 mv "$HOME/.cfg" "$HOME/.cfg.backup"
+
+# (Opcional) Limpia entradas añadidas en ~/.bashrc o ~/.zshrc:
+# - source ~/.dotbare/dotbare.plugin.bash
+# - export PATH="$HOME/.dotbare:$PATH"
+# - export PATH="$PATH:$HOME/.local/bin"
 ```
 
 ### Créditos
 
-- Basado en `dotbare` para la gestión de dotfiles.
-- Diseñado con cariño para una experiencia clara y segura en terminal.
+- Gestión de dotfiles basada en `dotbare`.
+- Proyecto bajo GPL-3.0. Diseñado para una experiencia clara en terminal.
 
 
