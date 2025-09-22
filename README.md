@@ -19,6 +19,16 @@
 
 ---
 
+### TL;DR
+
+```bash
+git clone https://github.com/25ASAB015/dotbuntu
+cd dotbuntu
+bash dotbuntu --repo https://github.com/usuario/mis-dotfiles.git
+```
+
+Consejo: si `~/.local/bin` no está en tu `PATH`, agrégalo a tu shell (ver más abajo).
+
 ### Tabla de contenidos
 
 - [Requisitos](#requisitos)
@@ -121,7 +131,7 @@ En modo no interactivo (sin TTY) no relanza automáticamente; muestra cómo hace
 - `VERBOSE=1`: mostrar comandos/tiempos con más detalle.
 - `DRY_RUN=1`: simular acciones (no modifica tu sistema).
 - `TEST_FAIL_APT=1` o `=nombre`: forzar fallo APT (útil para probar reintentos/relanzar).
-- `FORCE=1`: al configurar `dotbare`, permite respaldar directorios en conflicto y actualizar el remoto existente.
+- `FORCE`: el script soporta forzar ciertas operaciones vía opción CLI (ver más abajo).
 
 Ejemplo:
 
@@ -142,8 +152,8 @@ bash dotbuntu git@github.com:usuario/mis-dotfiles.git
 # Probar flujo de fallos y reintentos
 TEST_FAIL_APT=1 NO_CLEAR=1 bash dotbuntu
 
-# Forzar manejo de remoto y conflictos (avanzado)
-FORCE=1 bash dotbuntu --repo git@github.com:usuario/mis-dotfiles.git
+# Forzar manejo de remoto y conflictos (avanzado, ver flags)
+bash dotbuntu --repo git@github.com:usuario/mis-dotfiles.git --force
 ```
 
 ### Solución de problemas
@@ -153,6 +163,23 @@ FORCE=1 bash dotbuntu --repo git@github.com:usuario/mis-dotfiles.git
 - Fallos APT: usa el reintento o instala manualmente los listados en el Resumen APT.
 - SSH al repo falla: el script intenta automáticamente por HTTPS si es GitHub.
 - `~/.cfg` existe pero no es repo bare: el script pedirá que ejecutes con `FORCE=1` para respaldar y continuar.
+
+Helpers de dotbare no encontrados:
+
+```text
+/home/usuario/.local/bin/dotbare: line 16: .../helper/set_variable.sh: No such file or directory
+```
+
+- El instalador crea un wrapper en `~/.local/bin/dotbare` que ejecuta `~/.dotbare/dotbare`, asegurando que los helpers se resuelvan bien.
+- Verifica que existe: `head -n1 ~/.local/bin/dotbare` debería mostrar `#!/usr/bin/env bash`.
+- Asegura que `~/.local/bin` está en tu `PATH` (ver apartado siguiente).
+
+Incluir `~/.local/bin` en tu PATH (si hace falta):
+
+```bash
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
+source ~/.bashrc
+```
 
 Logs de errores:
 
