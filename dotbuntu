@@ -1,0 +1,498 @@
+#!/usr/bin/env bash
+# shellcheck shell=bash
+# shfmt: -ln=bash
+
+# Modo estricto: fallar ante errores y tuberías rotas
+set -Eeuo pipefail
+
+
+#==================================================
+# Apariencia (colores) y opciones
+#==================================================
+# Colores para salida formateada
+CRE=$(tput setaf 1) # Rojo
+CYE=$(tput setaf 3) # Amarillo
+CGR=$(tput setaf 2) # Verde
+CBL=$(tput setaf 4) # Azul
+BLD=$(tput bold)    # Negrita
+CNC=$(tput sgr0)    # Restablecer colores
+
+# Opciones por defecto
+DRY_RUN=0
+FORCE=0
+VERBOSE=0
+REPO_URL="git@github.com:25asab015/dotfiles.git"
+DOTBARE_DIR_DEFAULT="$HOME/.cfg"
+DOTBARE_TREE_DEFAULT="$HOME"
+
+# Constantes y rutas
+ERROR_LOG="$HOME/.local/share/dotbuntu/install_errors.log"  # Log de errores
+mkdir -p "$(dirname "$ERROR_LOG")" 2>/dev/null || true       # Asegurar carpeta
+
+
+#==================================================
+# Logging y utilidades básicas
+#==================================================
+
+# Salida simple (aprovecha colores definidos más abajo)
+log() {
+	printf "%s\n" "$*"
+}
+
+info() {
+	printf "%b%s%b\n" "${CBL}" "$*" "${CNC}"
+}
+
+warn() {
+	printf "%b%s%b\n" "${CYE}${BLD}" "$*" "${CNC}"
+}
+
+step() {
+	printf "%b»%b %s\n" "${BLD}${CBL}" "${CNC}" "$*"
+}
+
+# Mensajes de depuración controlados por VERBOSE
+debug() {
+	[ "${VERBOSE:-0}" -eq 1 ] && printf "%b… %s%b\n" "${BLD}" "$*" "${CNC}" || true
+}
+
+# Tiempo en milisegundos
+now_ms() { date +%s%3N 2>/dev/null || echo $(( $(date +%s) * 1000 )); }
+
+# Formatear duración ms → legible
+fmt_ms() {
+	ms=${1:-0}
+	if [ "$ms" -ge 1000 ]; then
+		s=$(( ms / 1000 ))
+		t=$(( (ms % 1000) / 100 ))
+		printf "%d.%ds" "$s" "$t"
+	else
+		printf "%dms" "$ms"
+	fi
+}
+
+# Manejo global de errores (definición del handler más abajo)
+
+#==================================================
+# Encabezado / Metadata
+#==================================================
+#    ▗▖          ▗▖                       
+#    ▐▌      ▐▌  ▐▌              ▐▌       
+#  ▟█▟▌ ▟█▙ ▐███ ▐▙█▙ ▐▌ ▐▌▐▙██▖▐███ ▐▌ ▐▌
+# ▐▛ ▜▌▐▛ ▜▌ ▐▌  ▐▛ ▜▌▐▌ ▐▌▐▛ ▐▌ ▐▌  ▐▌ ▐▌
+# ▐▌ ▐▌▐▌ ▐▌ ▐▌  ▐▌ ▐▌▐▌ ▐▌▐▌ ▐▌ ▐▌  ▐▌ ▐▌
+# ▝█▄█▌▝█▄█▘ ▐▙▄ ▐█▄█▘▐▙▄█▌▐▌ ▐▌ ▐▙▄ ▐▙▄█▌
+#  ▝▀▝▘ ▝▀▘   ▀▀ ▝▘▀▘  ▀▀▝▘▝▘ ▝▘  ▀▀  ▀▀▝▘
+#
+#   Autor   -   Roberto Flores
+#   Repo    -   https://github.com/25ASAB015/dotbuntu
+#   Última actualización - 21-sep-2025
+#
+#   dotbuntu - Script para instalar dotfiles en Ubuntu/WSL/Codespaces
+#
+# Copyright (C) 2025 dotmarchy <25ASAB015@ujmd.edu.sv>
+# Licenciado bajo GPL-3.0
+
+# Índice rápido de secciones:
+#  1) Apariencia y opciones (colores, flags, rutas)
+#  2) Logging y utilidades (log, info, debug, tiempo)
+#  3) Encabezado visual (logo)
+#  4) Manejo de errores (log_error, trap)
+#  5) Utilidades internas (run, require_cmd, normalize_repo_url, is_installed)
+#  6) Interacción con usuario (welcome)
+#  7) Dependencias (apt: oficiales; extras)
+#  8) dotbare (configuración)
+#  9) Main (flujo principal)
+
+# Uso rápido:
+#   dotbuntu [REPO_URL]
+# Ejemplo:
+#   dotbuntu https://github.com/yo/mis-dotfiles.git
+
+
+#==================================================
+# Logo
+#==================================================
+logo() {
+	text="$1"
+	printf "%b" "
+                                       
+   ▗▖          ▗▖                       
+   ▐▌      ▐▌  ▐▌              ▐▌       
+ ▟█▟▌ ▟█▙ ▐███ ▐▙█▙ ▐▌ ▐▌▐▙██▖▐███ ▐▌ ▐▌
+▐▛ ▜▌▐▛ ▜▌ ▐▌  ▐▛ ▜▌▐▌ ▐▌▐▛ ▐▌ ▐▌  ▐▌ ▐▌
+▐▌ ▐▌▐▌ ▐▌ ▐▌  ▐▌ ▐▌▐▌ ▐▌▐▌ ▐▌ ▐▌  ▐▌ ▐▌
+▝█▄█▌▝█▄█▘ ▐▙▄ ▐█▄█▘▐▙▄█▌▐▌ ▐▌ ▐▙▄ ▐▙▄█▌
+ ▝▀▝▘ ▝▀▘   ▀▀ ▝▘▀▘  ▀▀▝▘▝▘ ▝▘  ▀▀  ▀▀▝▘
+
+
+   ${BLD}${CRE}[ ${CYE}${text} ${CRE}]${CNC}\n\n"
+}
+
+#==================================================
+# Manejo de errores
+#==================================================
+log_error() {
+	error_msg=$1
+	timestamp=$(date +"%Y-%m-%d %H:%M:%S")
+
+	printf "%s" "[${timestamp}] ERROR: ${error_msg}\n" >>"$ERROR_LOG"
+	printf "%s%sERROR:%s %s\n" "${CRE}" "${BLD}" "${CNC}" "${error_msg}" >&2
+}
+
+# Handler de error y activación del trap
+on_error() {
+	exit_code=$?
+	line=${BASH_LINENO[0]:-UNKNOWN}
+	log_error "Fallo en la línea ${line}. Código: ${exit_code}"
+	exit "$exit_code"
+}
+trap on_error ERR
+
+#==================================================
+# Verificaciones iniciales (Ubuntu/WSL/Codespaces)
+#==================================================
+initial_checks() {
+	# No ejecutar como root
+	if [ "$(id -u)" = 0 ]; then
+		log_error "This script MUST NOT be run as root user."
+		exit 1
+	fi
+
+	# Sugerir ejecutar desde HOME (no forzar en Codespaces/WSL)
+	if [ "${PWD#${HOME}}" = "$PWD" ]; then
+		warn "Sugerencia: ejecuta desde tu HOME (cd ~) para evitar confusiones de rutas."
+	fi
+
+	# Verificar apt
+	if ! command -v apt-get >/dev/null 2>&1; then
+		log_error "Este script está pensado para Ubuntu/Debian (requiere apt)."
+		exit 1
+	fi
+
+	# Verificar conexión (curl a github como alternativa a ping)
+	if ! curl -fsI -m 3 https://github.com >/dev/null 2>&1; then
+		if ! ping -q -c 1 -W 1 8.8.8.8 >/dev/null 2>&1; then
+			log_error "No internet connection detected."
+			exit 1
+		fi
+	fi
+
+	# Detectar WSL / Codespaces (solo informativo)
+	if grep -qi microsoft /proc/version 2>/dev/null; then
+		info "Entorno detectado: WSL"
+	fi
+	if [ "${CODESPACES:-}" = "true" ] || [ -n "${GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN:-}" ]; then
+		info "Entorno detectado: GitHub Codespaces"
+	fi
+}
+
+#==================================================
+# Utilidades internas (helpers generales)
+#==================================================
+
+# Ejecuta un comando con descripción y cronometraje (respeta DRY_RUN)
+run() {
+	desc="$1"; shift
+	step "$desc"
+	debug "Comando: $*"
+	if [ "$DRY_RUN" -eq 1 ]; then
+		log "   ↳ (dry-run) $*"
+		return 0
+	fi
+	start=$(now_ms)
+	"$@"
+	end=$(now_ms)
+	dur=$(( end - start ))
+	log "   ↳ ✔ Hecho en $(fmt_ms "$dur")"
+}
+
+# Verifica que un comando exista; si falta, aborta con código 127
+require_cmd() {
+	name="$1"
+	command -v "$name" >/dev/null 2>&1 || {
+		log_error "No se encontró el comando requerido: $name"
+		exit 127
+	}
+}
+
+# Normaliza URL de repo a forma comparable (host/owner/repo)
+normalize_repo_url() {
+	# Entrada: URL (ssh o https); Salida: host/owner/repo en minúsculas, sin .git
+	url="$1"
+	url=${url%%.git}
+	# ssh: git@github.com:owner/repo
+	if [[ "$url" =~ ^git@([^:]+):(.+)$ ]]; then
+		echo "${BASH_REMATCH[1]}/${BASH_REMATCH[2]}" | tr '[:upper:]' '[:lower:]'
+		return 0
+	fi
+	# https: https://github.com/owner/repo
+	if [[ "$url" =~ ^https?://([^/]+)/(.+)$ ]]; then
+		echo "${BASH_REMATCH[1]}/${BASH_REMATCH[2]}" | tr '[:upper:]' '[:lower:]'
+		return 0
+	fi
+	# Si ya es host/owner/repo
+	echo "$url" | tr '[:upper:]' '[:lower:]'
+}
+
+# Comprueba si un paquete apt está instalado
+is_installed_apt() {
+	dpkg -s "$1" >/dev/null 2>&1
+}
+
+#==================================================
+# Interacción con el usuario (bienvenida)
+#==================================================
+
+# Mensaje de bienvenida y confirmación de continuación
+welcome() {
+	clear
+	logo "Bienvenido a dotbuntu (Ubuntu/WSL/Codespaces), $USER"
+
+	printf "%b" "${BLD}${CGR}Este script instalará y configurará tus dotfiles con dotbare:${CNC}
+
+  ${BLD}${CGR}[${CYE}i${CGR}]${CNC} Entorno soportado: Ubuntu/Debian, WSL y GitHub Codespaces
+  ${BLD}${CGR}[${CYE}i${CGR}]${CNC} Instalación de herramientas y configuración de dotbare idempotente
+  ${BLD}${CGR}[${CYE}i${CGR}]${CNC} URL del repositorio configurable por argumento o --repo
+
+${BLD}${CGR}[${CRE}!${CGR}]${CNC} ${BLD}${CRE}No se modifican archivos críticos del sistema${CNC}
+
+"
+
+	while :; do
+		printf " %b" "${BLD}${CGR}¿Deseas continuar?${CNC} [s/N]: "
+		read -r yn
+		case "$yn" in
+		[SsYy])
+			break
+			;;
+		[Nn] | "")
+			printf "\n%b\n" "${BLD}${CYE}Operación cancelada${CNC}"
+			exit 0
+			;;
+		*)
+			printf "\n%b\n" "${BLD}${CRE}Error:${CNC} Digita '${BLD}${CYE}s/y${CNC}' para sí o '${BLD}${CYE}n${CNC}' para no"
+			;;
+		esac
+	done
+}
+
+#==================================================
+# Dependencias (apt)
+#==================================================
+
+# Instala paquetes desde repos oficiales si faltan (tree, bat/batcat, etc.)
+install_apt_dependencies() {
+	clear
+	logo "Instalando dependencias (apt)"
+	sleep 1
+
+	run "Actualizar índices de paquetes" sudo apt-get update -y
+
+	# Paquetes base
+	apt_packages=(git curl ca-certificates tree highlight ruby-full git-delta diff-so-fancy)
+
+	missing_pkgs=()
+	for pkg in "${apt_packages[@]}"; do
+		if ! is_installed_apt "$pkg"; then
+			missing_pkgs+=("$pkg")
+		fi
+	done
+
+	if [ ${#missing_pkgs[@]} -gt 0 ]; then
+		run "Instalar paquetes: ${missing_pkgs[*]}" sudo apt-get install -y "${missing_pkgs[@]}"
+	else
+		info "Paquetes base ya presentes"
+	fi
+
+	# Manejo de bat/batcat
+	if ! command -v bat >/dev/null 2>&1; then
+		if command -v batcat >/dev/null 2>&1; then
+			# Crear alias/compatibilidad
+			run "Crear alias bat→batcat" sudo ln -sf "$(command -v batcat)" /usr/local/bin/bat
+		else
+			# Intento instalar bat
+			if ! is_installed_apt bat; then
+				run "Instalar batcat (compatibilidad)" sudo apt-get install -y bat
+				if ! command -v bat >/dev/null 2>&1 && command -v batcat >/dev/null 2>&1; then
+					run "Crear alias bat→batcat" sudo ln -sf "$(command -v batcat)" /usr/local/bin/bat
+				fi
+			fi
+		fi
+	fi
+
+	# coderay vía gem si no está disponible por paquete
+	if ! command -v gem >/dev/null 2>&1; then
+		warn "RubyGems no encontrado. Se intentó instalar ruby-full anteriormente."
+	else
+		if ! gem list -i coderay >/dev/null 2>&1; then
+			run "Instalar gem coderay" sudo gem install coderay --no-document
+		fi
+	fi
+}
+
+# Instala dotbare (vía script oficial) si falta
+install_dotbare() {
+	clear
+	logo "Instalando dotbare"
+	sleep 1
+
+	if command -v dotbare >/dev/null 2>&1; then
+		info "dotbare ya instalado"
+		return 0
+	fi
+
+	# Método recomendado por upstream
+	run "Descargar e instalar dotbare" bash -c "curl -fsSL https://raw.githubusercontent.com/kazhala/dotbare/master/install.sh | bash" || true
+
+	if ! command -v dotbare >/dev/null 2>&1; then
+		log_error "dotbare no se pudo instalar automáticamente."
+		printf "%b\n" "${BLD}${CYE}Instálalo manualmente desde: https://github.com/kazhala/dotbare${CNC}"
+		return 1
+	fi
+
+	info "dotbare instalado correctamente"
+}
+
+#==================================================
+# Configuración de dotbare (gestión de dotfiles)
+#==================================================
+
+# Configura dotbare (repo bare de dotfiles) y ajusta remoto si es necesario
+configure_dotbare() {
+	clear
+	logo "Configurando dotbare"
+	sleep 1
+
+	printf "%b\n" "${BLD}${CBL}Preparando dotbare para gestionar tus dotfiles...${CNC}"
+	sleep 1
+
+	require_cmd dotbare
+
+	# Permitir override por entorno
+	DOTBARE_DIR="${DOTBARE_DIR:-$DOTBARE_DIR_DEFAULT}"
+	DOTBARE_TREE="${DOTBARE_TREE:-$DOTBARE_TREE_DEFAULT}"
+	export DOTBARE_DIR DOTBARE_TREE
+
+	if [ -d "$DOTBARE_DIR" ]; then
+		# Verificar remoto
+		if git --git-dir="$DOTBARE_DIR" rev-parse --is-bare-repository >/dev/null 2>&1; then
+			current=""
+			target_nc=""
+			current_nc=""
+			current=$(git --git-dir="$DOTBARE_DIR" remote get-url origin 2>/dev/null || echo "")
+			target_nc=$(normalize_repo_url "$REPO_URL")
+			current_nc=$(normalize_repo_url "$current")
+			if [ -n "$current" ] && [ "$current_nc" != "$target_nc" ]; then
+				if [ "$FORCE" -eq 1 ]; then
+					printf "%b\n" "${BLD}${CYE}Remoto distinto detectado (${CBL}$current${CYE}). Reemplazando por ${CBL}$REPO_URL${CYE} por --force${CNC}"
+					if git --git-dir="$DOTBARE_DIR" remote set-url origin "$REPO_URL" 2>>"$ERROR_LOG"; then
+						printf "%b\n" "${BLD}${CGR}Remoto actualizado correctamente!${CNC}"
+					else
+						log_error "Error al actualizar el remoto de dotbare"
+						printf "%b\n" "${BLD}${CRE}Error al actualizar el remoto de dotbare${CNC}"
+					fi
+				else
+					printf "%b\n" "${BLD}${CYE}Remoto existente distinto (${CBL}$current${CYE}). Se mantiene. Usa --force para cambiarlo.${CNC}"
+				fi
+			else
+				printf "%b\n" "${BLD}${CGR}dotbare ya inicializado y remoto correcto.${CNC}"
+			fi
+		else
+			printf "%b\n" "${BLD}${CRE}${DOTBARE_DIR} existe pero no parece un repo bare.${CNC}"
+			if [ "$FORCE" -eq 1 ]; then
+				printf "%b\n" "${BLD}${CYE}Moviendo directorio conflictivo a respaldo...${CNC}"
+				if mv "$DOTBARE_DIR" "${DOTBARE_DIR}.bak_$(date +%s)" 2>>"$ERROR_LOG"; then
+					printf "%b\n" "${BLD}${CGR}Respaldo realizado correctamente.${CNC}"
+				else
+					log_error "Error al respaldar el directorio conflictivo: $DOTBARE_DIR"
+					printf "%b\n" "${BLD}${CRE}Error al respaldar el directorio conflictivo${CNC}"
+					exit 1
+				fi
+			else
+				printf "%b\n" "${BLD}${CRE}Directorio en conflicto. Usa --force para respaldar y continuar.${CNC}"
+				exit 1
+			fi
+		fi
+	fi
+
+	if [ ! -d "$DOTBARE_DIR" ]; then
+		printf "%b\n" "${BLD}${CBL}Inicializando dotbare con tu repositorio...${CNC}"
+		if dotbare finit -u "$REPO_URL" 2>>"$ERROR_LOG"; then
+			printf "%b\n" "${BLD}${CGR}dotbare inicializado correctamente!${CNC}"
+		else
+			log_error "Error al inicializar dotbare"
+			printf "%b\n" "${BLD}${CRE}Error al inicializar dotbare${CNC}"
+			return 1
+		fi
+	fi
+
+	printf "%b\n" "${BLD}${CGR}dotbare listo! (${CBL}${DOTBARE_DIR}${CGR} ↔ ${CBL}${REPO_URL}${CGR})${CNC}"
+	sleep 1
+}
+
+#==================================================
+# Argumentos CLI (parseo de flags)
+#==================================================
+
+# Muestra ayuda breve de uso
+usage() {
+	cat <<EOF
+Uso: $(basename "$0") [opciones] [REPO_URL]
+
+Opciones:
+  --repo URL      Especifica el repositorio de dotfiles a usar
+  -h, --help      Muestra esta ayuda y sale
+
+Posicional:
+  REPO_URL        Alternativamente puedes pasar la URL del repo como primer argumento
+
+Ejemplos:
+  $(basename "$0") --repo https://github.com/yo/mis-dotfiles.git
+  $(basename "$0") git@github.com:yo/mis-dotfiles.git
+EOF
+}
+
+# Parsea opciones de línea de comandos
+parse_args() {
+	while [ $# -gt 0 ]; do
+		case "$1" in
+			--repo)
+				shift || true
+				REPO_URL="${1:-$REPO_URL}"
+				;;
+			-h|--help)
+				usage
+				exit 0
+				;;
+			-*)
+				log_error "Opción desconocida: $1"
+				usage
+				exit 2
+				;;
+			*)
+				# Argumento posicional: URL del repo
+				REPO_URL="$1"
+				;;
+		esac
+		shift || true
+	done
+}
+
+#==================================================
+# Ejecución principal (orden del flujo)
+#==================================================
+# Punto de entrada del script: orquesta el flujo de instalación
+
+main() {
+	parse_args "$@"
+	initial_checks
+	welcome
+	install_apt_dependencies
+	install_dotbare
+	configure_dotbare
+}
+
+main "$@"
+
+
