@@ -473,6 +473,7 @@ ${BLD}${CBL}━━━━━━━━━━━━━━━━━━━━━━�
 # Backward compatibility aliases
 # DEPRECATED: Use show_* functions for new code
 #######################################
+logo() { show_logo "$@"; }
 dotmarchy_logo() { show_logo "$@"; }
 dotmarchy_welcome() { show_welcome "$@"; }
 dotmarchy_farewell() { show_farewell "$@"; }
