@@ -218,6 +218,7 @@ parse_arguments() {
 #
 # Installs NIX if needed and syncs packages from packages.nix.
 # This is the NIX alternative to execute_core_operations.
+# Automatically ensures NIX is in PATH before operations.
 #
 # Globals:
 #   SCRIPT_DIR - Directory containing this script
@@ -233,13 +234,21 @@ execute_nix_operations() {
     # shellcheck source=helper/nix-helpers.sh
     source "${SCRIPT_DIR}/helper/nix-helpers.sh"
     
-    # Bootstrap NIX if not installed
+    # Check if NIX is installed and load into PATH if needed
     if ! nix_is_installed; then
         info "NIX no detectado, iniciando instalación..."
         "${SCRIPT_DIR}/scripts/bootstrap-nix.sh" || {
             error "Instalación de NIX fallida"
             return 1
         }
+        
+        # After installation, ensure NIX is in PATH
+        if ! nix_ensure_in_path; then
+            error "NIX instalado pero no se pudo cargar en PATH"
+            info "Intenta reiniciar tu shell o ejecuta:"
+            echo "  source /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh"
+            return 1
+        fi
     else
         local version
         version=$(nix_get_version)

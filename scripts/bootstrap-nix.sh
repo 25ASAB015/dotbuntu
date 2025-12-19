@@ -605,7 +605,21 @@ main() {
     info "Ahora puedes usar 'nix-env' para instalar paquetes"
     info "Los paquetes de dotbuntu se sincronizarán automáticamente"
     echo ""
-    info "Para usar NIX en esta sesión: source $(detect_shell_rc)"
+    
+    # Try to source NIX profile for current session
+    local nix_profile_script="/nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh"
+    if [[ -f "$nix_profile_script" ]]; then
+        info "Cargando NIX en la sesión actual..."
+        # shellcheck source=/dev/null
+        if source "$nix_profile_script" 2>/dev/null; then
+            success "NIX disponible en esta sesión"
+        else
+            warn "No se pudo cargar NIX automáticamente"
+            info "Ejecuta manualmente: source $nix_profile_script"
+        fi
+    fi
+    
+    info "Para nuevas sesiones, NIX se cargará automáticamente desde $(detect_shell_rc)"
     
     return 0
 }

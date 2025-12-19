@@ -83,7 +83,8 @@ find_packages_nix() {
 # Verify NIX installation and readiness
 #
 # Checks that NIX is installed, available in PATH, and the NIX store
-# is accessible. Provides specific error messages for each failure case.
+# is accessible. Automatically sources NIX profile if needed.
+# Provides specific error messages for each failure case.
 #
 # Globals:
 #   None
@@ -100,17 +101,23 @@ find_packages_nix() {
 #   STDERR - Specific error messages
 #######################################
 verify_nix_installed() {
-    if ! command -v nix-env &>/dev/null; then
-        echo "ERROR: nix-env no encontrado en PATH" >&2
+    # Try to ensure NIX is in PATH
+    if ! nix_is_installed; then
+        echo "ERROR: NIX no está instalado" >&2
         echo "Instala NIX primero ejecutando: ./scripts/bootstrap-nix.sh" >&2
+        echo "" >&2
+        echo "Si NIX ya está instalado pero no se encuentra, intenta:" >&2
+        echo "  source /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh" >&2
         return 1
     fi
     
+    # Verify NIX store exists
     if [[ ! -d "/nix/store" ]]; then
         echo "ERROR: /nix/store no existe (instalación NIX incompleta)" >&2
         return 1
     fi
     
+    # Verify nix-env is functional
     if ! nix-env --version &>/dev/null; then
         echo "ERROR: nix-env no responde correctamente" >&2
         return 1

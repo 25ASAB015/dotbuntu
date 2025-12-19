@@ -24,9 +24,60 @@
 declare -r _NIX_HELPERS_SOURCED=1
 
 #######################################
+# Ensure NIX is in PATH
+#
+# Sources the NIX profile script to add NIX binaries to PATH.
+# Tries multiple common NIX profile locations.
+# This is called automatically by nix_is_installed() if NIX
+# is not in PATH but the profile script exists.
+#
+# Globals:
+#   PATH - Modified to include NIX binaries
+#   HOME - User's home directory
+#
+# Arguments:
+#   None
+#
+# Returns:
+#   0 - NIX profile sourced successfully
+#   1 - NIX profile not found
+#
+# Outputs:
+#   None
+#######################################
+nix_ensure_in_path() {
+    # If nix-env is already in PATH, nothing to do
+    command -v nix-env &>/dev/null && return 0
+    
+    # Try multi-user daemon installation (most common)
+    if [[ -f "/nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh" ]]; then
+        # shellcheck source=/dev/null
+        source "/nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh"
+        return 0
+    fi
+    
+    # Try single-user installation
+    if [[ -f "$HOME/.nix-profile/etc/profile.d/nix.sh" ]]; then
+        # shellcheck source=/dev/null
+        source "$HOME/.nix-profile/etc/profile.d/nix.sh"
+        return 0
+    fi
+    
+    # Try direct PATH addition as fallback
+    if [[ -d "/nix/var/nix/profiles/default/bin" ]]; then
+        export PATH="/nix/var/nix/profiles/default/bin:$PATH"
+        command -v nix-env &>/dev/null && return 0
+    fi
+    
+    # NIX is installed but can't find profile script
+    return 1
+}
+
+#######################################
 # Check if NIX is installed
 #
 # Verifies that the nix-env command is available in PATH.
+# Automatically tries to source NIX profile if not in PATH.
 # This is the primary NIX package management tool.
 #
 # Globals:
@@ -43,7 +94,14 @@ declare -r _NIX_HELPERS_SOURCED=1
 #   None
 #######################################
 nix_is_installed() {
-    command -v nix-env &>/dev/null
+    # First check if nix-env is already in PATH
+    command -v nix-env &>/dev/null && return 0
+    
+    # Try to load NIX into PATH
+    nix_ensure_in_path && return 0
+    
+    # NIX is not installed
+    return 1
 }
 
 #######################################
