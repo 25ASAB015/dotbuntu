@@ -305,7 +305,7 @@ welcome() {
     printf "%b\n" ""
     printf "%b\n" "  $(c bold)$(c primary)📦 Dotfiles y Sistema:$(cr)"
     printf "%b\n" "  $(c bold)$(c success)•$(cr) Gestión de dotfiles con $(c primary)dotbare$(cr)"
-    printf "%b\n" "  $(c bold)$(c success)•$(cr) Instalación de paquetes del sistema (Arch Linux)"
+    printf "%b\n" "  $(c bold)$(c success)•$(cr) Instalación de paquetes del sistema (Arch, Ubuntu, Fedora)"
     printf "%b\n" "  $(c bold)$(c success)•$(cr) Configuración de entorno de desarrollo"
     printf "%b\n" ""
     printf "%b\n" "  $(c bold)$(c primary)🔑 Git & GitHub:$(cr)"

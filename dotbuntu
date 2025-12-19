@@ -185,31 +185,71 @@ main() {
         verify_not_root
         verify_internet_connection
         
+        # Detect OS for package management
+        local os_type
+        os_type=$(detect_os)
+        info "Sistema operativo detectado: $os_type"
+        
         # Show dotmarchy specific welcome and summary
         dotmarchy_welcome
         
-        # Phase 1.1: Dotbare (doesn't require Arch Linux)
+        # Phase 1.1: Dotbare (doesn't require specific distro)
         configure_dotbare
         
-        # Phase 1.2: Core Operations (requires Arch Linux)
-        # Only verify Arch if we're actually going to install packages
-        if command -v pacman >/dev/null 2>&1; then
+        # Phase 1.2: Core Operations (package installation)
+        # Check if we have a supported package manager
+        local can_install_packages=false
+        case "$os_type" in
+            arch|manjaro|endeavouros|garuda)
+                if command -v pacman >/dev/null 2>&1; then
+                    can_install_packages=true
+                    info "Gestor de paquetes: pacman (Arch Linux)"
+                fi
+                ;;
+            ubuntu|debian|linuxmint|pop|elementary)
+                if command -v apt >/dev/null 2>&1; then
+                    can_install_packages=true
+                    info "Gestor de paquetes: apt (Debian/Ubuntu)"
+                fi
+                ;;
+            fedora|rhel|centos|rocky|alma)
+                if command -v dnf >/dev/null 2>&1 || command -v yum >/dev/null 2>&1; then
+                    can_install_packages=true
+                    info "Gestor de paquetes: dnf/yum (Fedora/RHEL)"
+                fi
+                ;;
+            darwin)
+                if command -v brew >/dev/null 2>&1; then
+                    can_install_packages=true
+                    info "Gestor de paquetes: Homebrew (macOS)"
+                fi
+                ;;
+        esac
+        
+        if [[ "$can_install_packages" == true ]]; then
             execute_core_operations
         else
-            warn "Saltando instalación de paquetes core (pacman no disponible)"
-            info "Esta funcionalidad requiere Arch Linux o una distribución basada en Arch"
+            warn "Instalación de paquetes del sistema no disponible"
+            info "Sistema: $os_type"
+            info "Los scripts de instalación de paquetes actualmente soportan:"
+            info "  • Arch Linux (pacman)"
+            info "  • Ubuntu/Debian (apt) - en desarrollo"
+            info "  • Fedora/RHEL (dnf/yum) - en desarrollo"
+            info "  • macOS (brew) - en desarrollo"
+            info ""
+            info "Puedes continuar con dotbare y configuración de Git"
         fi
         
-        # Phase 1.3: Extras (requires Arch Linux for some operations)
+        # Phase 1.3: Extras (requires package manager for some operations)
         if [[ "${INSTALL_EXTRAS:-0}" -eq 1 ]]; then
-            if command -v pacman >/dev/null 2>&1; then
+            if [[ "$can_install_packages" == true ]]; then
                 execute_extras_operations
             else
-                warn "Saltando instalación de extras (pacman no disponible)"
+                warn "Saltando instalación de extras (gestor de paquetes no soportado)"
             fi
         fi
         
-        # Phase 1.4: Environment Setup (doesn't require Arch Linux)
+        # Phase 1.4: Environment Setup (doesn't require specific distro)
         if [[ "${SETUP_ENVIRONMENT:-0}" -eq 1 ]]; then
             execute_setup_operations
         fi
