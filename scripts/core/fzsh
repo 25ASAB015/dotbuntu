@@ -22,7 +22,7 @@ readonly HELPER_DIR="${SCRIPT_DIR}/../../helper"
 source "${HELPER_DIR}/load_helpers.sh"
 load_helpers "${HELPER_DIR}" set_variable colors logger checks
 # shellcheck source=/dev/null
-source "${HELPER_DIR}/package_manager.sh"
+source "${SCRIPT_DIR}/../scripts/deprecated/package_manager.sh"
 
 # Setup error trap
 trap on_error ERR

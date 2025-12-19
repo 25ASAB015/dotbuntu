@@ -1,5 +1,11 @@
 #!/usr/bin/env bash
 # shellcheck shell=bash
+#
+# ⚠️  DEPRECATED - This script is deprecated and will be removed in v3.0.0 (2026-03-01)
+# Use NIX package manager instead: ./dotbuntu (NIX is now default)
+# For legacy mode: ./dotbuntu --legacy
+# Migration guide: docs/MIGRATION.md
+#
 # fpython - Install Python packages (pip/pipx)
 
 set -Eeuo pipefail

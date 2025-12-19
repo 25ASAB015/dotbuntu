@@ -141,8 +141,7 @@ export DOTBARE_BACKUP="${DOTBARE_BACKUP:-${XDG_DATA_HOME:-$HOME/.local/share}/do
 
 # Versioning
 export DOTMARCHY_VERSION="${DOTMARCHY_VERSION:-v2.0.0}"
-export DOTBUNTU_VERSION="v1.0.0"
-
+export DOTBUNTU_VERSION="v2.0.0"
 # Dotmarchy Operational flags
 export DRY_RUN="${DRY_RUN:-0}"
 export FORCE="${FORCE:-0}"
@@ -151,18 +150,31 @@ export SETUP_ENVIRONMENT="${SETUP_ENVIRONMENT:-0}"
 export SKIP_SYSTEM="${SKIP_SYSTEM:-0}"
 export VERIFY_MODE="${VERIFY_MODE:-0}"
 
-# Default repository URL
-export REPO_URL="${REPO_URL:-git@github.com:25ASAB015/dotfiles.git}"
+#==============================================================================
+# GLOBAL CONFIGURATION VARIABLES
+#==============================================================================
 
-# Configuration paths
+# Dotbare configuration (dotfiles management)
+export DOTBARE_DIR_DEFAULT="$HOME/.cfg"
+export DOTBARE_TREE_DEFAULT="$HOME"
+export DOTBARE_BACKUP_DEFAULT="$HOME/.local/share/dotbare"
+
+# Repository configuration
+export DEFAULT_REPO_URL=""
+export REPO_URL="${REPO_URL:-$DEFAULT_REPO_URL}"
+
+# NIX package configuration (Phase 3: NIX as default)
+export PACKAGES_NIX_PATH="${PACKAGES_NIX_PATH:-$HOME/.config/dotmarchy/packages.nix}"
+export PACKAGES_NIX_TEMPLATE="${SCRIPT_DIR}/packages.nix"
+
+# Logging
+export ERROR_LOG="${ERROR_LOG:-$HOME/.local/share/dotmarchy/install_errors.log}"
 export SETUP_CONFIG="${SETUP_CONFIG:-$HOME/.config/dotmarchy/setup.conf}"
-export DOTMARCHY_ERROR_LOG="${ERROR_LOG:-$HOME/.local/share/dotmarchy/install_errors.log}"
 
-# Core dependencies (always installed by dotmarchy)
-# Note: git-delta and diff-so-fancy are platform-specific and installed via alternative methods
+# Legacy package arrays (DEPRECATED - use packages.nix instead)
+# These remain for backward compatibility with --legacy flag
+# Will be removed in v3.0.0 (2026-03-01)
 export CORE_DEPENDENCIES="zsh tree bat highlight ruby-coderay npm"
-
-# Default extra packages
 export DEFAULT_EXTRA_DEPENDENCIES="neovim tmux htop ripgrep fd fzf git-delta"
 export DEFAULT_EXTRA_CHAOTIC_DEPENDENCIES="brave-bin visual-studio-code-bin"
 export DEFAULT_EXTRA_AUR_APPS="zsh-theme-powerlevel10k-git zsh-autosuggestions zsh-syntax-highlighting"

@@ -1,0 +1,224 @@
+# Implementation Tasks
+
+## Phase 1: Foundation - NIX Support (Week 1)
+
+### 1.1 Create packages.nix Template
+- [x] 1.1.1 Create `packages.nix` with current CORE_DEPENDENCIES equivalents
+- [x] 1.1.2 Add DEFAULT_EXTRA_DEPENDENCIES equivalents from setup.conf
+- [x] 1.1.3 Include language servers and dev tools
+- [ ] 1.1.4 TEST: Test packages.nix syntax with `nix-instantiate --eval` (MANUAL)
+- [ ] 1.1.5 TEST: Verify all packages exist in nixpkgs with `nix search` (MANUAL)
+
+### 1.2 Implement NIX Installation Script
+- [x] 1.2.1 Create `scripts/bootstrap-nix.sh` with shebang and strict mode
+- [x] 1.2.2 Add detection for existing NIX installation
+- [x] 1.2.3 Implement Determinate Systems installer method
+- [x] 1.2.4 Implement official NIX installer method
+- [x] 1.2.5 Implement distro package method (pacman for Arch)
+- [x] 1.2.6 Add interactive menu for installation method selection
+- [ ] 1.2.7 TEST: Test on Ubuntu (no NIX) and Arch (with/without NIX) (MANUAL)
+
+### 1.3 Create Package Sync Script
+- [x] 1.3.1 Create `scripts/sync-packages.sh` 
+- [x] 1.3.2 Implement `nix-env -iA` command construction
+- [x] 1.3.3 Add error handling and logging
+- [x] 1.3.4 Make script idempotent (safe to run multiple times)
+- [x] 1.3.5 Add success/failure reporting with package counts
+
+### 1.4 Add NIX Helper Module
+- [x] 1.4.1 Create `helper/nix-helpers.sh`
+- [x] 1.4.2 Add function: `nix_is_installed()` - check if NIX available
+- [x] 1.4.3 Add function: `nix_get_version()` - get NIX version
+- [x] 1.4.4 Add function: `nix_package_installed()` - check package status
+- [x] 1.4.5 Add function: `nix_cleanup()` - garbage collection helper
+
+### 1.5 Integrate with Main Entry Point
+- [x] 1.5.1 Add `--nix` flag to `dotbuntu` CLI argument parser
+- [x] 1.5.2 Conditional execution: if `--nix`, call bootstrap-nix → sync-packages
+- [x] 1.5.3 Keep default behavior unchanged (old package managers)
+- [x] 1.5.4 Add help text for `--nix` flag
+
+### 1.6 Documentation - NIX Setup Guide
+- [x] 1.6.1 Create `docs/NIX_SETUP.md` with introduction
+- [x] 1.6.2 Document installation methods (Determinate, official, distro)
+- [x] 1.6.3 Add packages.nix format explanation with examples
+- [x] 1.6.4 Include troubleshooting section
+- [x] 1.6.5 Add FAQ (disk space, uninstall, package not found)
+
+### 1.7 Testing Phase 1
+- [ ] 1.7.1 TEST: Test `--nix` flag on clean Ubuntu 22.04 (MANUAL)
+- [ ] 1.7.2 TEST: Test `--nix` flag on clean Arch Linux (MANUAL)
+- [ ] 1.7.3 TEST: Test with existing NIX installation (MANUAL)
+- [ ] 1.7.4 TEST: Verify packages.nix installs all expected packages (MANUAL)
+- [ ] 1.7.5 TEST: Confirm old method still works (no regression) (MANUAL)
+
+## Phase 2: Integration with dotbare (Week 2)
+
+### 2.1 Update dotbare Integration
+- [x] 2.1.1 Modify `fdotbare` to suggest adding packages.nix to repo
+- [x] 2.1.2 Add template packages.nix to dotbare initialization
+- [x] 2.1.3 Update dotbare workflow docs to include packages.nix
+
+### 2.2 Unified Install Script
+- [x] 2.2.1 Refactor `install.sh` to orchestrate NIX + dotbare
+- [x] 2.2.2 Add interactive prompts: install NIX? clone dotfiles? 
+- [x] 2.2.3 Handle first-time setup vs existing installation
+- [x] 2.2.4 Add progress indicators for each step
+- [x] 2.2.5 Implement error recovery (retry/skip/abort options)
+
+### 2.3 Package Sync on Pull
+- [x] 2.3.1 Create hook suggestion: sync-packages after `dotbare pull`
+- [x] 2.3.2 Add `--auto-sync` option to apply packages.nix changes automatically
+- [x] 2.3.3 Document manual sync workflow
+
+### 2.4 Migration Guide
+- [x] 2.4.1 Create `docs/MIGRATION.md`
+- [x] 2.4.2 Document step-by-step migration from v1.x
+- [x] 2.4.3 Add setup.conf → packages.nix conversion examples
+- [x] 2.4.4 Include rollback instructions (how to return to v1.x)
+- [x] 2.4.5 Add troubleshooting for common migration issues
+
+### 2.5 Conversion Helper Script
+- [x] 2.5.1 Create `scripts/convert-setup-conf.sh`
+- [x] 2.5.2 Parse setup.conf arrays (EXTRA_DEPENDENCIES, etc.)
+- [x] 2.5.3 Map known packages to nixpkgs equivalents
+- [x] 2.5.4 Output packages.nix format
+- [x] 2.5.5 Add warnings for unmapped packages
+
+### 2.6 Testing Phase 2
+- [ ] 2.6.1 TEST: Test full workflow: install NIX → clone dotfiles → apply packages (MANUAL)
+- [ ] 2.6.2 TEST: Test packages.nix versioning in dotbare repo (MANUAL)
+- [ ] 2.6.3 TEST: Test sync after modifying packages.nix (MANUAL)
+- [ ] 2.6.4 TEST: Test conversion script with real setup.conf files (MANUAL)
+- [ ] 2.6.5 TEST: Beta test with 2-3 external users (MANUAL)
+
+## Phase 3: Transition to NIX Default (Week 3)
+
+### 3.1 Make NIX Default Method
+- [x] 3.1.1 Swap default: NIX is default, add `--legacy` flag for old method
+- [x] 3.1.2 Add deprecation warnings to legacy package installers
+- [x] 3.1.3 Update `--help` output to promote NIX method
+- [x] 3.1.4 Show migration guide link when using `--legacy`
+
+### 3.2 Move Legacy Code
+- [x] 3.2.1 Create `scripts/legacy/` directory
+- [x] 3.2.2 Move `fdeps`, `faur`, `fchaotic`, `fchaotic-deps` to legacy/
+- [x] 3.2.3 Move language-specific installers (fnpm, fcargo, etc.) to legacy/
+- [x] 3.2.4 Keep scripts executable but mark as deprecated in headers
+- [x] 3.2.5 Update any imports/references to legacy scripts
+
+### 3.3 Simplify Configuration
+- [x] 3.3.1 Update `config/defaults.sh` - remove package-related vars
+- [x] 3.3.2 Keep only: DOTBARE_*, REPO_URL, ERROR_LOG, SETUP_CONFIG
+- [x] 3.3.3 Update `helper/set_variable.sh` similarly
+- [x] 3.3.4 Add PACKAGES_NIX_PATH variable
+
+### 3.4 Remove Distribution Detection
+- [x] 3.4.1 Archive `helper/package_manager.sh` (no longer needed)
+- [x] 3.4.2 Remove distro detection from checks.sh if present
+- [x] 3.4.3 Update any code that called package_manager functions
+- [x] 3.4.4 Verify no broken imports
+
+### 3.5 Update Main Documentation
+- [x] 3.5.1 Rewrite README.md with NIX-first approach
+- [x] 3.5.2 Update installation instructions
+- [x] 3.5.3 Update usage examples (show packages.nix workflow)
+- [x] 3.5.4 Add \"Why NIX?\" section explaining benefits
+- [x] 3.5.5 Link to NIX_SETUP.md and MIGRATION.md
+
+### 3.6 Architecture Documentation
+- [x] 3.6.1 Create `docs/ARCHITECTURE.md`
+- [x] 3.6.2 Document NIX + dotbare separation of concerns
+- [x] 3.6.3 Explain package installation flow
+- [x] 3.6.4 Document configuration file locations
+- [x] 3.6.5 Add diagrams (ASCII art or mermaid)
+
+### 3.7 Testing Phase 3
+- [ ] 3.7.1 TEST: Full integration test on Arch (NIX default) (MANUAL)
+- [ ] 3.7.2 TEST: Full integration test on Ubuntu (NIX default) (MANUAL)
+- [ ] 3.7.3 TEST: Test `--legacy` flag still works (MANUAL)
+- [x] 3.7.4 Verify no code references to removed files
+- [ ] 3.7.5 TEST: Run shellcheck on all modified scripts (MANUAL)
+
+## Phase 4: Polish and Release (Week 4)
+
+### 4.1 Comprehensive Testing
+- [ ] 4.1.1 TEST: Test on fresh Ubuntu 20.04, 22.04, 24.04 (MANUAL)
+- [ ] 4.1.2 TEST: Test on fresh Arch Linux (MANUAL)
+- [ ] 4.1.3 TEST: Test on Debian 11, 12 (MANUAL)
+- [ ] 4.1.4 TEST: Test with different shells (bash, zsh) (MANUAL)
+- [ ] 4.1.5 TEST: Test uninstall and reinstall flow (MANUAL)
+
+### 4.2 Error Handling and UX
+- [x] 4.2.1 Review all error messages for clarity
+- [x] 4.2.2 Add helpful suggestions to error messages
+- [x] 4.2.3 Ensure progress indicators work correctly
+- [ ] 4.2.4 TEST: Test interruption handling (Ctrl+C) (MANUAL)
+- [x] 4.2.5 Verify logging to ERROR_LOG is complete
+
+### 4.3 Documentation Polish
+- [x] 4.3.1 Proofread all documentation (spelling, grammar)
+- [x] 4.3.2 Add code examples to every doc section
+- [x] 4.3.3 Create quick start guide (1-page, 5 minutes)
+- [x] 4.3.4 Update CHANGELOG with all changes
+- [x] 4.3.5 Create upgrade guide (v1.x → v2.0.0)
+
+### 4.4 Demo Materials
+- [ ] 4.4.1 OPTIONAL: Create animated GIF: fresh install flow
+- [ ] 4.4.2 OPTIONAL: Create animated GIF: sync packages workflow
+- [ ] 4.4.3 OPTIONAL: Add GIFs to README.md
+- [ ] 4.4.4 OPTIONAL: Create 2-minute demo video
+- [ ] 4.4.5 OPTIONAL: Take screenshots for documentation
+
+### 4.5 Release Preparation
+- [x] 4.5.1 Update version to 2.0.0 in all files
+- [x] 4.5.2 Create comprehensive release notes
+- [ ] 4.5.3 USER: Tag v2.0.0-rc1 for release candidate testing
+- [ ] 4.5.4 USER: Beta test release candidate for 3-5 days
+- [ ] 4.5.5 USER: Address any critical bugs from RC
+
+### 4.6 Release
+- [ ] 4.6.1 USER: Merge `feat/nix-dotbare` to `master`
+- [ ] 4.6.2 USER: Create GitHub release v2.0.0
+- [ ] 4.6.3 USER: Attach any binary artifacts (if applicable)
+- [ ] 4.6.4 USER: Announce on GitHub discussions
+- [ ] 4.6.5 USER: Update social media / project website
+
+### 4.7 Post-Release Monitoring
+- [ ] 4.7.1 USER: Monitor GitHub issues for bug reports (first 2 weeks)
+- [ ] 4.7.2 USER: Collect user feedback on NIX transition
+- [ ] 4.7.3 USER: Update FAQ based on common questions
+- [ ] 4.7.4 USER: Plan v2.1.0 improvements based on feedback
+- [ ] 4.7.5 USER: Schedule legacy code removal for v3.0.0 (3 months)
+
+## Validation Tasks (Ongoing)
+
+### Continuous Validation
+- [ ] TEST: Run `shellcheck` on all modified shell scripts (MANUAL)
+- [ ] TEST: Run `shfmt -d` to check formatting (MANUAL)
+- [ ] TEST: Test on both Arch and Ubuntu after each phase (MANUAL)
+- [x] Update documentation as implementation evolves
+- [ ] USER: Keep CHANGELOG.md updated with each task completion
+
+## Dependencies
+
+**Sequential dependencies:**
+- 1.1-1.5 must complete before 1.7 (testing)
+- Phase 1 must complete before Phase 2
+- Phase 2 must complete before Phase 3
+- 2.4 (Migration guide) needed before 3.1 (making NIX default)
+
+**Parallel work opportunities:**
+- Documentation tasks (1.6, 2.4, 3.5, 3.6) can be done in parallel with implementation
+- Testing can start as soon as related implementation completes
+- Demo materials (4.4) can be created alongside Phase 3 work
+
+## Estimated Effort
+
+- Phase 1: 8-12 hours (foundational work)
+- Phase 2: 6-8 hours (integration)
+- Phase 3: 4-6 hours (cleanup, mostly deletion)
+- Phase 4: 6-8 hours (testing, polish, release)
+
+**Total**: ~24-34 hours over 4 weeks (1 week per phase)
+

@@ -105,11 +105,17 @@ show_help() {
     printf "%b\n" "  -h, --help          Show this help message and exit"
     printf "%b\n" "  --non-interactive   Run Git configuration without prompts"
     printf "%b\n" "  --auto-upload       Automatically upload keys to GitHub"
-    printf "%b\n" "  --extras            Install extra packages (npm, cargo, pip, etc.)"
+    printf "%b\n" "  --extras            Install extra packages"
+    printf "%b\n" "  --legacy            Use legacy package managers (DEPRECATED, use before 2026-03)"
     printf "%b\n" "  --setup-env         Setup environment (directories, repos, shell config)"
     printf "%b\n" "  --verify            Run verification checks and exit"
     printf "%b\n" "  --repo URL          Override default dotfiles repository URL"
     printf "%b\n" "  -v, --verbose       Enable verbose output"
+    printf "%b\n" ""
+    printf "%b\n" "${COLORS[bold]}Package Management:${COLORS[reset]}"
+    printf "%b\n" "  By default, packages are managed via NIX (reproducible, cross-platform)"
+    printf "%b\n" "  Use --legacy for old apt/pacman/AUR method (deprecated)"
+    printf "%b\n" "  See docs/NIX_SETUP.md and docs/MIGRATION.md for details"
     printf "%b\n" "  -f, --force         Force operations without prompts"
     printf "\n"
     printf "%b\n" "${COLORS[bold]}Examples:${COLORS[reset]}"
@@ -172,6 +178,11 @@ parse_arguments() {
                 export VERIFY_MODE=1
                 shift
                 ;;
+            --legacy)
+                export USE_LEGACY=1
+                export USE_NIX=0
+                shift
+                ;;
             --repo)
                 [[ -z "${2:-}" ]] && { error "Opción --repo requiere un argumento"; exit 2; }
                 export REPO_URL="$2"
@@ -200,6 +211,50 @@ parse_arguments() {
                 ;;
         esac
     done
+}
+
+#######################################
+# Execute NIX-based package management
+#
+# Installs NIX if needed and syncs packages from packages.nix.
+# This is the NIX alternative to execute_core_operations.
+#
+# Globals:
+#   SCRIPT_DIR - Directory containing this script
+#
+# Returns:
+#   0 - Success
+#   1 - Failure
+#######################################
+execute_nix_operations() {
+    info "Usando NIX para gestión de paquetes..."
+    
+    # Source NIX helpers
+    # shellcheck source=helper/nix-helpers.sh
+    source "${SCRIPT_DIR}/helper/nix-helpers.sh"
+    
+    # Bootstrap NIX if not installed
+    if ! nix_is_installed; then
+        info "NIX no detectado, iniciando instalación..."
+        "${SCRIPT_DIR}/scripts/bootstrap-nix.sh" || {
+            error "Instalación de NIX fallida"
+            return 1
+        }
+    else
+        local version
+        version=$(nix_get_version)
+        success "NIX ya instalado: $version"
+    fi
+    
+    # Sync packages from packages.nix
+    info "Sincronizando paquetes desde packages.nix..."
+    "${SCRIPT_DIR}/scripts/sync-packages.sh" || {
+        warn "Algunos paquetes pueden no haberse instalado correctamente"
+        warn "Revisa el log para más detalles"
+        return 1
+    }
+    
+    success "Paquetes NIX sincronizados exitosamente"
 }
 
 #######################################
@@ -310,13 +365,36 @@ main() {
                 ;;
         esac
         
-        if [[ "$can_install_packages" == true ]]; then
-            execute_core_operations
+        # Check if using legacy mode (deprecated)
+        if [[ "${USE_LEGACY:-0}" -eq 1 ]]; then
+            warn "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            warn "  LEGACY MODE (DEPRECATED)"
+            warn "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            warn "You are using the legacy package management system."
+            warn "This will be removed on 2026-03-01 (3 months from v2.0.0 release)"
+            warn ""
+            warn "Migration guide: ${SCRIPT_DIR}/docs/MIGRATION.md"
+            warn "NIX setup guide: ${SCRIPT_DIR}/docs/NIX_SETUP.md"
+            warn "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            sleep 3
+            
+            if [[ "$can_install_packages" == true ]]; then
+                execute_core_operations
+            else
+                error "No supported package manager found for legacy mode"
+                return 1
+            fi
+        elif [[ "${USE_NIX:-1}" -eq 1 ]]; then
+            # NIX is now the default
+            execute_nix_operations || {
+                error "NIX package management failed"
+                info "Tip: Use --legacy flag to use old package managers (deprecated)"
+                return 1
+            }
         else
             warn "Instalación de paquetes del sistema no disponible"
             info "Sistema: $os_type"
-            info "Los scripts de instalación de paquetes actualmente soportan:"
-            info "  • Arch Linux (pacman)"
+            info "Usa ./install.sh o ./dotbuntu para instalar paquetes"
             info "  • Ubuntu/Debian (apt) - en desarrollo"
             info "  • Fedora/RHEL (dnf/yum) - en desarrollo"
             info "  • macOS (brew) - en desarrollo"
