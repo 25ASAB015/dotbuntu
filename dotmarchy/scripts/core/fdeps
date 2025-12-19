@@ -1,0 +1,177 @@
+#!/usr/bin/env bash
+# shellcheck shell=bash
+# shfmt: -ln=bash
+#
+# fdeps - Install dependencies from official repositories
+#
+# Installs packages from Arch Linux official repositories using pacman.
+# Always installs CORE dependencies. If --extras flag is set, also installs
+# additional packages from SETUP_CONFIG or defaults.
+#
+# @params
+# Globals:
+#   ${CORE_DEPENDENCIES}: Core packages to install (from set_variable.sh)
+#   ${INSTALL_EXTRAS}: Flag for extra packages (from set_variable.sh)
+#   ${SETUP_CONFIG}: Path to setup configuration (from set_variable.sh)
+#   ${DEFAULT_EXTRA_DEPENDENCIES}: Default extra packages (from set_variable.sh)
+#   ${ERROR_LOG}: Path to error log file (from set_variable.sh)
+# Arguments:
+#   -h|--help: Show help message and exit
+# Returns:
+#   0 on success
+#   1 on failure
+
+set -Eeuo pipefail
+
+# Determine script directory
+readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly mydir="$SCRIPT_DIR"
+readonly HELPER_DIR="${SCRIPT_DIR}/../../helper"
+
+# Source required helpers
+# shellcheck source=/dev/null
+source "${HELPER_DIR}/load_helpers.sh"
+load_helpers "${HELPER_DIR}" set_variable colors logger prompts checks
+
+# Setup error trap
+trap on_error ERR
+
+#######################################
+# Display usage information
+# Outputs:
+#   Help text for fdeps
+#######################################
+function usage() {
+  echo -e "Usage: fdeps [-h]
+
+Install packages from Arch Linux official repositories.
+Always installs core dependencies. With --extras flag set, also installs
+additional packages specified in setup.conf or defaults.
+
+Core packages installed:
+  ${CORE_DEPENDENCIES}
+
+Optional arguments:
+  -h, --help\t\tshow this help message and exit."
+}
+
+#######################################
+# Main function - install dependencies
+# Installs core and optionally extra packages
+#######################################
+function main() {
+    # Parse arguments
+    if [[ "${1:-}" == "-h" ]] || [[ "${1:-}" == "--help" ]]; then
+        usage
+        exit 0
+    fi
+    
+    clear 2>/dev/null || true
+    logo "Instalando las dependencias necesarias desde los repositorios oficiales..."
+    sleep 2
+    
+    # Note: Package databases already synced by fupdate (pacman -Syu)
+    # No need to sync again here
+    
+    # Build dependency list
+    local dependencies="$CORE_DEPENDENCIES"
+    
+    # Add extra dependencies if --extras flag is set
+    if [ "${INSTALL_EXTRAS:-0}" -eq 1 ]; then
+        local extra_deps=""
+        if [ -f "$SETUP_CONFIG" ]; then
+            # shellcheck source=/dev/null
+            source "$SETUP_CONFIG"
+            extra_deps="${EXTRA_DEPENDENCIES[*]:-$DEFAULT_EXTRA_DEPENDENCIES}"
+        else
+            extra_deps="$DEFAULT_EXTRA_DEPENDENCIES"
+        fi
+        
+        dependencies="$dependencies $extra_deps"
+        printf "\n%b\n" "${BLD}${CYE}[--extras] Incluyendo paquetes adicionales opcionales${CNC}"
+    fi
+    
+    printf "\n%b\n\n" "${BLD}${CBL}Verificando las dependencias necesarias...${CNC}"
+    sleep 2
+    
+    # Detect missing packages
+    local missing_pkgs=()
+    for pkg in $dependencies; do
+        if ! is_installed "$pkg"; then
+            missing_pkgs+=("$pkg")
+            printf "%b\n" " ${BLD}${CYE}$pkg ${CRE}no instalado${CNC}"
+        else
+            printf "%b\n" "${BLD}${CGR}$pkg ${CBL}ya está instalado${CNC}"
+        fi
+    done
+    
+    # Batch installation if needed
+    if [ "${#missing_pkgs[@]}" -gt 0 ]; then
+        local count="${#missing_pkgs[@]}"
+        printf "\n%b\n\n" "${BLD}${CYE}Instalando $count paquetes, por favor espera...${CNC}"
+        
+        # Capture output and errors properly
+        local install_output
+        local install_status=0
+        install_output=$(sudo pacman -S --noconfirm "${missing_pkgs[@]}" 2>&1) || install_status=$?
+        
+        # Always log the output
+        echo "$install_output" | tee -a "$ERROR_LOG" >/dev/null
+        
+        if [ $install_status -eq 0 ]; then
+            # Verify complete installation
+            local failed_pkgs=()
+            for pkg in "${missing_pkgs[@]}"; do
+                if ! is_installed "$pkg"; then
+                    failed_pkgs+=("$pkg")
+                    log_error "Error al instalar: $pkg"
+                fi
+            done
+            
+            # Show final results
+            if [ "${#failed_pkgs[@]}" -eq 0 ]; then
+                printf "%b\n\n" "${BLD}${CGR}Todos los paquetes se han instalado correctamente!${CNC}"
+            else
+                local fail_count="${#failed_pkgs[@]}"
+                printf "%b\n" "${BLD}${CRE}Error al instalar $fail_count paquetes:${CNC}"
+                printf "%b\n\n" "  ${BLD}${CYE}${failed_pkgs[*]}${CNC}"
+            fi
+        else
+            log_error "Error crítico durante la instalación por lotes"
+            printf "%b\n" "${BLD}${CRE}Error al instalar! Verifica el log para más detalles${CNC}"
+            printf "%b\n" "${BLD}${CYE}Últimas líneas del error:${CNC}"
+            echo "$install_output" | tail -5 | while IFS= read -r line; do
+                printf "  %b\n" "${CRE}$line${CNC}"
+            done || true
+            
+            # Try to install packages individually as fallback
+            warn "Intentando instalar paquetes individualmente..."
+            local individual_failed=()
+            for pkg in "${missing_pkgs[@]}"; do
+                if ! is_installed "$pkg"; then
+                    if sudo pacman -S --noconfirm "$pkg" >> "$ERROR_LOG" 2>&1; then
+                        printf "%b\n" "  ${BLD}${CGR}✓ $pkg instalado${CNC}"
+                    else
+                        individual_failed+=("$pkg")
+                        printf "%b\n" "  ${BLD}${CRE}✗ $pkg falló${CNC}"
+                    fi
+                fi
+            done
+            
+            if [ "${#individual_failed[@]}" -gt 0 ]; then
+                printf "%b\n" "${BLD}${CRE}Paquetes que no se pudieron instalar: ${individual_failed[*]}${CNC}"
+                return 1
+            fi
+        fi
+    else
+        printf "%b\n" "\n${BLD}${CGR}Todas las dependencias ya están instaladas${CNC}"
+    fi
+    
+    sleep 3
+}
+
+# Execute only if invoked directly
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    main "$@"
+fi
+

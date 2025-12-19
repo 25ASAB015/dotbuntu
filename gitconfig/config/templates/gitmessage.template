@@ -1,0 +1,42 @@
+# <tipo>(<ámbito>): <asunto>
+#
+# <cuerpo del mensaje>
+#
+# <pie del mensaje>
+#
+# Tipos permitidos:
+#   feat:     Nueva característica
+#   fix:      Corrección de bug
+#   docs:     Cambios en documentación
+#   style:    Formato, espacios, etc (sin cambios de código)
+#   refactor: Refactorización (sin cambios funcionales)
+#   perf:     Mejoras de rendimiento
+#   test:     Agregar o modificar tests
+#   chore:    Cambios en build, dependencias, etc
+#   ci:       Cambios en configuración CI/CD
+#   revert:   Revertir un commit anterior
+#
+# Ámbito (opcional): Componente o módulo afectado
+#
+# Asunto: Descripción breve (máx 50 caracteres)
+#   - Usa imperativo: "agrega" no "agregando" ni "agregó"
+#   - Sin punto al final
+#   - Primera letra en minúscula
+#
+# Cuerpo (opcional): Explicación detallada del cambio
+#   - Wrap a 72 caracteres
+#   - Explica QUÉ y POR QUÉ, no CÓMO
+#
+# Pie (opcional): Issues relacionados, breaking changes
+#   - Refs: #123
+#   - Closes: #456
+#   - BREAKING CHANGE: descripción
+#
+# Ejemplo:
+# feat(auth): agrega autenticación con OAuth2
+#
+# Implementa flujo OAuth2 para login con Google y GitHub.
+# Mejora seguridad y experiencia de usuario.
+#
+# Refs: #123
+# Closes: #456

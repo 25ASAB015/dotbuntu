@@ -1,0 +1,135 @@
+#!/usr/bin/env bash
+# shellcheck shell=bash
+# shfmt: -ln=bash
+#
+# fchaotic - Chaotic-AUR repository setup script for dotmarchy
+#
+# Configures the Chaotic-AUR repository by:
+# - Adding GPG key and signing it
+# - Installing chaotic-keyring and chaotic-mirrorlist packages
+# - Adding repository entry to /etc/pacman.conf
+#
+# @params
+# Globals:
+#   ${ERROR_LOG}: Path to error log file
+# Arguments:
+#   -h|--help: Show help message and exit
+# Returns:
+#   0 on success or if already configured
+#   1 on failure
+
+set -Eeuo pipefail
+
+# Determine script directory
+readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly mydir="$SCRIPT_DIR"
+readonly HELPER_DIR="${SCRIPT_DIR}/../../helper"
+
+# Source required helpers
+# shellcheck source=/dev/null
+source "${HELPER_DIR}/load_helpers.sh"
+load_helpers "${HELPER_DIR}" colors logger prompts utils
+
+# Setup error trap
+trap on_error ERR
+
+#######################################
+# Display usage information
+# Outputs:
+#   Help text for fchaotic
+#######################################
+function usage() {
+  echo -e "Usage: fchaotic [-h]
+
+Configure the Chaotic-AUR repository for Arch Linux.
+This adds pre-compiled AUR packages for faster installation.
+
+Steps performed:
+  1. Add and sign GPG key for Chaotic-AUR
+  2. Install chaotic-keyring and chaotic-mirrorlist
+  3. Add repository entry to /etc/pacman.conf
+
+Optional arguments:
+  -h, --help\t\tshow this help message and exit."
+}
+
+#######################################
+# Main function - configure Chaotic-AUR repository
+# Performs all steps to add Chaotic-AUR
+#######################################
+function main() {
+    # Parse arguments
+    if [[ "${1:-}" == "-h" ]] || [[ "${1:-}" == "--help" ]]; then
+        usage
+        exit 0
+    fi
+    
+    clear 2>/dev/null || true
+    logo "Agregar el repositorio chaotic-aur"
+    
+    local repo_name="chaotic-aur"
+    local key_id="3056513887B78AEB"
+    sleep 2
+    
+    # Repository configuration message
+    printf "%b\n" "${BLD}${CYE}Instalando el repositorio ${CBL}${repo_name}${CYE}...${CNC}"
+    
+    # Check if repository already exists in pacman.conf
+    if grep -q "\[${repo_name}\]" /etc/pacman.conf; then
+        printf "%b\n" "\n${BLD}${CYE}El repositorio ya existe en pacman.conf${CNC}"
+        sleep 3
+        return 0
+    fi
+    
+    # GPG key management
+    if ! pacman-key -l | grep -q "$key_id"; then
+        printf "%b\n" "${BLD}${CYE}Agregando la llave GPG...${CNC}"
+        if ! sudo pacman-key --recv-key "$key_id" --keyserver keyserver.ubuntu.com 2>&1 | tee -a "$ERROR_LOG" >/dev/null; then
+            log_error "Error al recibir la llave GPG"
+            return 1
+        fi
+        
+        printf "%b\n" "${BLD}${CYE}Firmando la llave GPG localmente...${CNC}"
+        if ! sudo pacman-key --lsign-key "$key_id" 2>&1 | tee -a "$ERROR_LOG" >/dev/null; then
+            log_error "Error al firmar la llave GPG"
+            return 1
+        fi
+    else
+        printf "\n%b\n" "${BLD}${CYE}La llave GPG ya existe en el keyring${CNC}"
+    fi
+    
+    # Install required packages
+    local chaotic_pkgs="chaotic-keyring chaotic-mirrorlist"
+    for pkg in $chaotic_pkgs; do
+        if ! pacman -Qq "$pkg" >/dev/null 2>&1; then
+            printf "%b\n" "${BLD}${CYE}Instalando ${CBL}${pkg}${CNC}"
+            if ! sudo pacman -U --noconfirm "https://cdn-mirror.chaotic.cx/chaotic-aur/${pkg}.pkg.tar.zst" 2>&1 | tee -a "$ERROR_LOG" >/dev/null; then
+                log_error "Error al instalar ${pkg}"
+                return 1
+            fi
+        else
+            printf "%b\n" "${BLD}${CYE}${pkg} ya está instalado${CNC}"
+        fi
+    done
+    
+    # Add repository configuration
+    printf "\n%b\n" "${BLD}${CYE}Agregando el repositorio a pacman.conf...${CNC}"
+    if ! printf "\n[%s]\nInclude = /etc/pacman.d/chaotic-mirrorlist\n" "$repo_name" | sudo tee -a /etc/pacman.conf >/dev/null 2>>"$ERROR_LOG"; then
+        log_error "Error al agregar la configuración del repositorio"
+        return 1
+    fi
+    
+    # Silent pacman database refresh (required after adding repository)
+    if ! sudo pacman -Sy --noconfirm >/dev/null 2>>"$ERROR_LOG"; then
+        warn "pacman -Sy falló tras agregar chaotic-aur; revisa $ERROR_LOG"
+    fi
+    
+    printf "%b\n" "\n${BLD}${CBL}${repo_name} ${CGR}Repositorio configurado correctamente!${CNC}"
+    sleep 3
+}
+
+# Execute only if invoked directly
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    main "$@"
+fi
+

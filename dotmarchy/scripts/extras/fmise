@@ -1,0 +1,721 @@
+#!/usr/bin/env bash
+# shellcheck shell=bash
+# shfmt: -ln=bash
+#
+# fmise - Install MISE packages globally
+#
+# Installs MISE packages from config or defaults. Only runs if --extras flag is set.
+#
+# Author: dotmarchy project
+# Version: 1.1.0
+#
+# @params
+# Globals:
+#   ${INSTALL_EXTRAS}: Must be 1 to run
+#   ${SETUP_CONFIG}: Path to configuration file
+#   ${ERROR_LOG}: Error log path
+# Arguments:
+#   -h|--help: Show help
+#   --force: Force execution in standalone mode
+# Returns:
+#   0 on success, 1 on failure
+
+set -Eeuo pipefail
+
+# ============================================================================
+# SCRIPT INITIALIZATION
+# ============================================================================
+
+readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly SCRIPT_NAME="$(basename "${BASH_SOURCE[0]}")"
+readonly SCRIPT_VERSION="1.1.0"
+readonly HELPER_DIR="${SCRIPT_DIR}/../../helper"
+
+# Source helper libraries
+# shellcheck source=/dev/null
+source "${HELPER_DIR}/load_helpers.sh"
+load_helpers "${HELPER_DIR}" set_variable colors logger prompts checks
+
+# Error handling
+trap on_error ERR
+
+# ============================================================================
+# GLOBAL STATE MANAGEMENT
+# ============================================================================
+
+# Package tracking arrays - prefixed with g_ for global scope clarity
+declare -a g_missing_mise=()
+declare -a g_skipped_packages=()
+declare -a g_already_installed_mise=()
+declare -a g_already_installed_path=()
+declare -a g_already_installed_npm=()
+declare -a g_already_installed_pacman=()
+declare -a g_mise_failed=()
+
+# Configuration variables
+declare -g VERBOSE=false
+
+# Statistics tracking
+declare -gi g_install_count=0
+declare -gi g_total_time=0
+
+# ============================================================================
+# UTILITY FUNCTIONS
+# ============================================================================
+
+function verbose_log() {
+    if [ "$VERBOSE" = true ]; then
+        info "$@"
+    fi
+}
+
+function get_elapsed_time() {
+    local start_time="$1"
+    local end_time=$(date +%s)
+    echo $((end_time - start_time))
+}
+
+function format_duration() {
+    local seconds="$1"
+    if [ "$seconds" -lt 60 ]; then
+        echo "${seconds}s"
+    else
+        echo "$((seconds / 60))m $((seconds % 60))s"
+    fi
+}
+
+function is_installed_via_mise() {
+    local package="$1"
+    mise list 2>/dev/null | grep -qE "^${package}[[:space:]]"
+}
+
+function is_installed_via_npm() {
+    local npm_pkg_name="$1"
+    # Preserve scoped names; only strip a version suffix if there's a second "@"
+    if [[ "${npm_pkg_name#*@}" == *@* ]]; then
+        npm_pkg_name="${npm_pkg_name%@*}"
+    fi
+    local escaped_name=$(printf '%s\n' "$npm_pkg_name" | sed 's/[[\.*^$()+?{|]/\\&/g')
+    npm list -g --depth=0 2>/dev/null | grep -qE "(├──|└──) ${escaped_name}@"
+}
+
+function is_installed_via_pipx() {
+    local pkg_name="$1"
+    pkg_name="${pkg_name%@*}"
+    command -v pipx >/dev/null 2>&1 && \
+        (pipx list --short 2>/dev/null | grep -qE "^${pkg_name}$" || \
+         pipx list 2>/dev/null | grep -qE "package .*${pkg_name}")
+}
+
+function is_installed_via_gem() {
+    local pkg_name="$1"
+    pkg_name="${pkg_name%@*}"
+    command -v gem >/dev/null 2>&1 && \
+        gem list 2>/dev/null | grep -qE "^${pkg_name} "
+}
+
+function is_installed_via_cargo() {
+    local bin_name="$1"
+    [ -f "$HOME/.cargo/bin/$bin_name" ]
+}
+
+function install_package() {
+    local package="$1"
+    local log_file="$2"
+
+    if mise use -g "$package" >>"$log_file" 2>&1; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+function usage() {
+    cat << EOF
+${BLD}${CBL}fmise${CNC} - Professional MISE Package Manager v${SCRIPT_VERSION}
+
+${BLD}USAGE:${CNC}
+    ${SCRIPT_NAME} [OPTIONS]
+
+${BLD}DESCRIPTION:${CNC}
+    Manages MISE packages from dotmarchy configuration with intelligent
+    detection, conflict resolution, and comprehensive error handling.
+
+${BLD}OPTIONS:${CNC}
+    -h, --help          Show this help message and exit
+    -f, --force         Force execution (standalone mode, bypasses INSTALL_EXTRAS check)
+    -v, --verbose       Enable verbose output for debugging
+
+${BLD}CONFIGURATION:${CNC}
+    Config file: ${CYE}~/.config/dotmarchy/setup.conf${CNC}
+    Array name:  ${CYE}MISE_PACKAGES${CNC}
+
+${BLD}SUPPORTED BACKENDS:${CNC}
+    ${CGR}npm:${CNC}     Node.js packages via npm
+    ${CGR}pipx:${CNC}    Python applications (isolated environments)
+    ${CGR}cargo:${CNC}   Rust packages via cargo
+    ${CGR}gem:${CNC}     Ruby gems
+    ${CGR}github:${CNC}  GitHub releases (owner/repo format)
+    ${CGR}core:${CNC}    MISE core tools (no prefix needed)
+
+${BLD}EXAMPLES:${CNC}
+    ${CYE}# Normal usage (from dotmarchy with --extras)${CNC}
+    ./install_all_dependencies.sh --extras
+
+    ${CYE}# Standalone mode${CNC}
+    ./${SCRIPT_NAME} --force
+
+    ${CYE}# Verbose mode for debugging${CNC}
+    ./${SCRIPT_NAME} --force --verbose
+
+${BLD}EXIT CODES:${CNC}
+    ${CGR}0${CNC} - All packages installed successfully
+    ${CRE}1${CNC} - Some packages failed to install
+    ${CRE}2${CNC} - Configuration error
+
+${BLD}ENVIRONMENT VARIABLES:${CNC}
+    ${CYE}INSTALL_EXTRAS${CNC}  - Must be 1 to run (or use --force)
+    ${CYE}SETUP_CONFIG${CNC}    - Override config file path
+    ${CYE}ERROR_LOG${CNC}       - Override error log path
+
+${BLD}DOCUMENTATION:${CNC}
+    MISE docs: ${CBL}https://mise.jdx.dev${CNC}
+    Project:   ${CBL}https://github.com/yourusername/dotmarchy${CNC}
+
+EOF
+}
+
+function is_package_installed() {
+    local package="$1"
+    local bin_name="$2"
+
+    # Skip pip packages (mise doesn't support them, only pipx)
+    if [[ "$package" == pip:* ]]; then
+        return 1
+    fi
+
+    # Check MISE first
+    if is_installed_via_mise "$package"; then
+        verbose_log "  ${CGR}✅ ${CYE}$package ${CBL}detectado en MISE${CNC}"
+        g_already_installed_mise+=("$package")
+        return 0
+    fi
+
+    # Backend-specific checks
+    if [[ "$package" == npm:* ]]; then
+        local npm_pkg="${package#npm:}"
+        if is_installed_via_npm "$npm_pkg"; then
+            verbose_log "  ${CGR}✅ ${CYE}$package ${CBL}detectado en npm global${CNC}"
+            g_already_installed_npm+=("$package")
+            return 0
+        fi
+    fi
+
+    if [[ "$package" == pipx:* ]]; then
+        local pipx_pkg="${package#pipx:}"
+        if is_installed_via_pipx "$pipx_pkg"; then
+            verbose_log "  ${CGR}✅ ${CYE}$package ${CBL}detectado en pipx${CNC}"
+            g_already_installed_path+=("$package")
+            return 0
+        fi
+    fi
+
+    if [[ "$package" == gem:* ]] || [[ "$package" == ruby:* ]]; then
+        local gem_pkg="${package#gem:}"
+        gem_pkg="${gem_pkg#ruby:}"
+        if is_installed_via_gem "$gem_pkg"; then
+            verbose_log "  ${CGR}✅ ${CYE}$package ${CBL}detectado en gem${CNC}"
+            g_already_installed_path+=("$package")
+            return 0
+        fi
+    fi
+
+    if [[ "$package" == cargo:* ]]; then
+        if is_installed_via_cargo "$bin_name"; then
+            verbose_log "  ${CGR}✅ ${CYE}$package ${CBL}detectado en cargo${CNC}"
+            g_already_installed_path+=("$package")
+            return 0
+        fi
+    fi
+
+    # Final fallback: check if binary is in PATH
+    if command -v "$bin_name" >/dev/null 2>&1; then
+        verbose_log "  ${CGR}✅ ${CYE}$package ${CBL}detectado en PATH (binario: $bin_name)${CNC}"
+        g_already_installed_path+=("$package")
+        return 0
+    fi
+
+    return 1
+}
+
+function generate_summary() {
+    local total_packages="${1:-0}"
+    local already_installed=$(( ${#g_already_installed_mise[@]} + ${#g_already_installed_path[@]} + ${#g_already_installed_npm[@]} + ${#g_already_installed_pacman[@]} ))
+    local successfully_installed=$(( ${#g_missing_mise[@]} - ${#g_mise_failed[@]} ))
+    local failed_count=${#g_mise_failed[@]}
+
+    printf "\n%b\n" "${BLD}${CYE}📊 RESUMEN DETALLADO DE INSTALACIÓN${CNC}"
+    printf "%b\n" "${BLD}${CYE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CNC}"
+
+    # Total overview
+    printf "%b\n" "${CBL}📦 Total de paquetes procesados: ${CYE}${total_packages}${CNC}"
+    printf "%b\n" "${CGR}✅ Ya instalados: ${CYE}${already_installed}${CNC}"
+
+    # Already installed breakdown
+    if [ ${#g_already_installed_mise[@]} -gt 0 ]; then
+        printf "%b\n" "${CGR}   • En MISE: ${CYE}${#g_already_installed_mise[@]}${CNC}"
+    fi
+    if [ ${#g_already_installed_path[@]} -gt 0 ]; then
+        printf "%b\n" "${CGR}   • En PATH: ${CYE}${#g_already_installed_path[@]}${CNC}"
+    fi
+    if [ ${#g_already_installed_npm[@]} -gt 0 ]; then
+        printf "%b\n" "${CGR}   • Via NPM global: ${CYE}${#g_already_installed_npm[@]}${CNC}"
+    fi
+    if [ ${#g_already_installed_pacman[@]} -gt 0 ]; then
+        printf "%b\n" "${CGR}   • Via Pacman: ${CYE}${#g_already_installed_pacman[@]}${CNC}"
+    fi
+
+    # Successfully installed
+    if [ $successfully_installed -gt 0 ]; then
+        printf "%b\n" "${CGR}✅ Instalados correctamente: ${CYE}${successfully_installed}${CNC}"
+        if [ $g_total_time -gt 0 ]; then
+            printf "%b\n" "${CBL}   Tiempo total: ${CYE}$(format_duration $g_total_time)${CNC}"
+            local avg_time=$((g_total_time / successfully_installed))
+            printf "%b\n" "${CBL}   Promedio/paquete: ${CYE}${avg_time}s${CNC}"
+        fi
+    fi
+
+    # Failed packages
+    if [ $failed_count -gt 0 ]; then
+        printf "%b\n" "${CRE}❌ Fallaron en instalarse: ${CYE}${failed_count}${CNC}"
+        for pkg in "${g_mise_failed[@]}"; do
+            printf "%b\n" "${CRE}   • $pkg${CNC}"
+        done
+        printf "%b\n" "${CYE}   → Revisa el log de errores: ${ERROR_LOG}${CNC}"
+    fi
+
+    # Skipped packages
+    if [ ${#g_skipped_packages[@]} -gt 0 ]; then
+        printf "%b\n" "${CYE}⚠️  Omitidos (${#g_skipped_packages[@]}):${CNC}"
+        for pkg in "${g_skipped_packages[@]}"; do
+            local pip_pkg="${pkg#pip:}"
+            printf "%b\n" "${CYE}   • $pkg ${CBL}(instalar con: pip install $pip_pkg)${CNC}"
+        done
+    fi
+
+    # Recommendations
+    printf "\n%b\n" "${BLD}${CYE}💡 RECOMENDACIONES${CNC}"
+    printf "%b\n" "${BLD}${CYE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CNC}"
+
+    if [ $failed_count -gt 0 ]; then
+        printf "%b\n" "${CRE}• Paquetes que fallaron pueden requerir dependencias del sistema${CNC}"
+        printf "%b\n" "${CRE}• Revisa los logs en: ${ERROR_LOG}${CNC}"
+        printf "%b\n" "${CRE}• Intenta reinstalar manualmente: mise use -g <paquete>${CNC}"
+    fi
+
+    printf "%b\n" "${CBL}• Verifica las versiones instaladas: ${CYE}mise list${CNC}"
+    printf "%b\n" "${CBL}• Actualiza regularmente: ${CYE}mise upgrade${CNC}"
+    printf "%b\n" "${CBL}• Usa shims automáticos: ${CYE}eval \"\$(mise activate bash)\"${CNC}"
+
+    # Final status
+    printf "\n%b\n" "${BLD}${CYE}📈 ESTADO FINAL${CNC}"
+    printf "%b\n" "${BLD}${CYE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CNC}"
+
+    if [ $failed_count -eq 0 ] && [ ${#g_missing_mise[@]} -gt 0 ]; then
+        printf "%b\n" "${CGR}${BLD}🎉 ¡Instalación completada exitosamente!${CNC}"
+        printf "%b\n" "${CGR}   Todos los paquetes MISE están listos para usar${CNC}"
+    elif [ $failed_count -eq 0 ] && [ ${#g_missing_mise[@]} -eq 0 ]; then
+        printf "%b\n" "${CGR}${BLD}✅ Todos los paquetes ya estaban instalados${CNC}"
+    else
+        local success_rate=$(( (total_packages - failed_count) * 100 / total_packages ))
+        printf "%b\n" "${CYE}📊 Tasa de éxito: ${success_rate}%${CNC}"
+        printf "%b\n" "${CYE}⚠️  Revisa los paquetes que fallaron antes de continuar${CNC}"
+    fi
+}
+
+function load_mise_packages() {
+    local config_file="$1"
+    local -n packages_ref=$2  # nameref to array
+    
+    info "Buscando archivo de configuración: $config_file"
+    
+    if [ ! -f "$config_file" ]; then
+        warn "Archivo de configuración no encontrado: $config_file"
+        return 1
+    fi
+    
+    info "Archivo de configuración encontrado, cargando..."
+    
+    # Extract MISE_PACKAGES array from config file
+    if grep -q "^MISE_PACKAGES=(" "$config_file" 2>/dev/null; then
+        # shellcheck source=/dev/null
+        source "$config_file"
+        
+        if [ "${MISE_PACKAGES+set}" = "set" ] && [ "${#MISE_PACKAGES[@]}" -gt 0 ]; then
+            # Copy array to reference
+            for pkg in "${MISE_PACKAGES[@]}"; do
+                packages_ref+=("$pkg")
+            done
+            info "Encontrados ${#packages_ref[@]} paquetes en MISE_PACKAGES"
+            return 0
+        else
+            warn "MISE_PACKAGES no está definido o está vacío en $config_file"
+            return 1
+        fi
+    else
+        warn "No se encontró MISE_PACKAGES en $config_file"
+        return 1
+    fi
+}
+
+function extract_binary_name() {
+    local package="$1"
+    local bin_name="$package"
+    
+    # Remove backend prefix (npm:, cargo:, pipx:, gem:, ruby:, github:, etc.)
+    if [[ "$package" == *":"* ]]; then
+        bin_name="${package#*:}"
+    fi
+    
+    # Remove version suffix (@latest, @1.0.0, etc.) but keep scoped package names
+    if [[ "${bin_name#*@}" == *@* ]]; then
+        bin_name="${bin_name%@*}"
+    fi
+    
+    # Handle github:owner/repo -> repo name (usually the binary name)
+    if [[ "$package" == github:* ]]; then
+        if [[ "$bin_name" == *"/"* ]]; then
+            bin_name="${bin_name##*/}"
+        fi
+        # Special cases for known GitHub repos
+        case "$bin_name" in
+            cli) bin_name="gh" ;;  # github:cli/cli -> gh
+            lazygit) bin_name="lazygit" ;;
+        esac
+    fi
+    
+    # Handle scoped npm packages (@org/package -> package)
+    if [[ "$bin_name" == @*/* ]]; then
+        bin_name="${bin_name##*/}"
+    fi
+    
+    # Map cargo package names to binary names
+    if [[ "$package" == cargo:* ]]; then
+        case "$bin_name" in
+            bob-nvim) bin_name="bob" ;;
+            tree-sitter-cli) bin_name="tree-sitter" ;;
+        esac
+    fi
+
+    # Map npm scoped packages whose binary differs from package name
+    if [[ "$package" == npm:* ]]; then
+        case "$bin_name" in
+            qwen-code) bin_name="qwen" ;;  # @qwen-code/qwen-code -> qwen
+        esac
+    fi
+    
+    # Map pipx package names (some have different binary names)
+    if [[ "$package" == pipx:* ]]; then
+        case "$bin_name" in
+            neovim-remote) bin_name="nvr" ;;
+            python-lsp-server) bin_name="pylsp" ;;
+            rich-cli) bin_name="rich" ;;
+            trash-cli) bin_name="trash" ;;
+        esac
+    fi
+    
+    echo "$bin_name"
+}
+
+function check_pacman_conflicts() {
+    local package="$1"
+    local bin_name="$2"
+    
+    # Only check cargo packages for pacman conflicts
+    if [[ "$package" != cargo:* ]]; then
+        return 1
+    fi
+    
+    # Map common cargo packages to their pacman equivalents
+    local pacman_pkg="$bin_name"
+    case "$bin_name" in
+        bob-nvim) pacman_pkg="bob" ;;
+        tree-sitter-cli) pacman_pkg="tree-sitter" ;;
+        stylua) pacman_pkg="stylua" ;;
+    esac
+    
+    if is_installed "$pacman_pkg" 2>/dev/null; then
+        printf "%b\n" "  ${CGR}✅ ${CYE}$package ${CBL}ya está instalado con pacman ($pacman_pkg)${CNC}"
+        g_already_installed_pacman+=("$package")
+        return 0
+    fi
+    
+    return 1
+}
+
+# Helper function to display packages with adaptive columns
+function display_package_group() {
+    local group_name="${1:-}"
+    local group_icon="${2:-}"
+
+    # Safely get remaining arguments (packages)
+    local -a packages=()
+    if [ $# -gt 2 ]; then
+        shift 2
+        packages=("$@")
+    fi
+
+    # Filter out empty strings that might come from empty array expansion
+    local -a filtered_packages=()
+    for pkg in "${packages[@]}"; do
+        [ -n "${pkg:-}" ] && filtered_packages+=("$pkg")
+    done
+    packages=("${filtered_packages[@]}")
+    local count=${#packages[@]}
+
+    [ "${count}" -eq 0 ] && return 0
+
+    printf "\n  ${BLD}${group_icon} ${CBL}${group_name}${CNC} ${CGR}(${count})${CNC}\n"
+
+    # Adaptive columns: 1 column if ≤5 packages, 2 columns otherwise
+    local cols=1
+    [ "${count}" -gt 5 ] && cols=2
+
+    local i=0
+    for package in "${packages[@]}"; do
+        [ $(( i % cols )) -eq 0 ] && printf "    "
+        printf "%-60s" "${CYE}${package}${CNC}"
+
+        if [ $cols -eq 1 ] || [ $(( (i + 1) % cols )) -eq 0 ]; then
+            printf "\n"
+        fi
+        i=$(( i + 1 ))
+    done
+
+    # Ensure trailing newline for odd counts with 2 columns
+    [ $cols -eq 2 ] && [ $(( i % cols )) -ne 0 ] && printf "\n"
+    return 0
+}
+
+function display_packages_grid() {
+    local -n packages=$1
+    
+    # Group packages by backend
+    local -a npm_packages=()
+    local -a pipx_packages=()
+    local -a cargo_packages=()
+    local -a gem_packages=()
+    local -a github_packages=()
+    local -a other_packages=()
+    
+    for package in "${packages[@]}"; do
+        if [[ "$package" == npm:* ]]; then
+            npm_packages+=("$package")
+        elif [[ "$package" == pipx:* ]]; then
+            pipx_packages+=("$package")
+        elif [[ "$package" == cargo:* ]]; then
+            cargo_packages+=("$package")
+        elif [[ "$package" == gem:* ]] || [[ "$package" == ruby:* ]]; then
+            gem_packages+=("$package")
+        elif [[ "$package" == github:* ]]; then
+            github_packages+=("$package")
+        else
+            other_packages+=("$package")
+        fi
+    done
+    
+    # Display each group with consistent formatting
+    display_package_group "NPM Packages" "📦" "${npm_packages[@]}"
+    display_package_group "Pipx Packages (Python)" "🐍" "${pipx_packages[@]}"
+    display_package_group "Cargo Packages (Rust)" "🦀" "${cargo_packages[@]}"
+    display_package_group "Ruby Gems" "💎" "${gem_packages[@]}"
+    display_package_group "GitHub Releases" "🐙" "${github_packages[@]}"
+    display_package_group "Core MISE Tools" "🔧" "${other_packages[@]}"
+}
+
+function main() {
+    local force_mode=false
+
+    # Parse command line arguments
+    echo "[DEBUG] fmise args: $*" >&2
+    sleep 1
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -h|--help)
+                usage
+                exit 0
+                ;;
+            --force)
+                force_mode=true
+                shift
+                ;;
+            -v|--verbose)
+                VERBOSE=true
+                shift
+                ;;
+            *)
+                log_error "Opción desconocida: $1"
+                usage
+                exit 2
+                ;;
+        esac
+    done
+
+    # Configuration file path
+    SETUP_CONFIG="${SETUP_CONFIG:-${HOME}/.config/dotmarchy/setup.conf}"
+    echo "[DEBUG] Using SETUP_CONFIG=${SETUP_CONFIG}" >&2
+    sleep 1
+
+    local start_time=$(date +%s)
+
+    info "fmise: Iniciando verificación de paquetes MISE..."
+    echo "[DEBUG] INSTALL_EXTRAS=${INSTALL_EXTRAS:-unset} force_mode=${force_mode}" >&2
+    sleep 1
+
+    # Only run if --extras is set (when called from dotmarchy) or --force is used
+    if [ "${INSTALL_EXTRAS:-0}" -ne 1 ] && [ "$force_mode" != "true" ]; then
+        warn "fmise: INSTALL_EXTRAS no está activado, saltando instalación de paquetes MISE"
+        warn "Para ejecutar standalone: ./fmise --force"
+        return 0
+    fi
+
+    logo "Instalando paquetes MISE globales"
+    
+    # Check if mise is installed
+    if ! command -v mise >/dev/null 2>&1; then
+        log_error "mise no está instalado"
+        cat >&2 << EOF
+
+Para instalar mise:
+  En Arch Linux:    sudo pacman -S mise
+  Otros sistemas:   curl https://mise.run | sh
+  
+Documentación:      https://mise.jdx.dev
+
+EOF
+        return 1
+    fi
+    
+    # Load package list from config
+    local -a mise_packages=()
+    if ! load_mise_packages "$SETUP_CONFIG" mise_packages; then
+        warn "No se pudieron cargar paquetes desde $SETUP_CONFIG"
+        echo "[DEBUG] load_mise_packages returned non-zero" >&2
+        return 0
+    fi
+    echo "[DEBUG] mise_packages loaded: ${#mise_packages[@]} entries" >&2
+    sleep 1
+    
+    # If no packages configured, exit gracefully
+    if [ "${#mise_packages[@]}" -eq 0 ]; then
+        warn "No hay paquetes MISE configurados para instalar"
+        return 0
+    fi
+    
+    # Display configured packages
+    printf "\n%b\n" "${BLD}${CYE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CNC}"
+    printf "%b\n" "${BLD}${CBL}📦 Paquetes configurados (${#mise_packages[@]}):${CNC}"
+    printf "%b\n" "${BLD}${CYE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CNC}"
+    display_packages_grid mise_packages
+    
+    printf "\n%b\n\n" "${BLD}${CYE}🔍 Verificando paquetes MISE...${CNC}"
+    
+    # Check each package
+    for package in "${mise_packages[@]}"; do
+        # Extract binary name
+        local bin_name
+        bin_name=$(extract_binary_name "$package")
+        echo "[DEBUG] checking package=${package} bin=${bin_name}" >&2
+
+        # Skip pip packages (mise doesn't support pip, only pipx)
+        if [[ "$package" == pip:* ]]; then
+            warn "Saltando $package (mise no soporta 'pip:', solo 'pipx:' para aplicaciones CLI)"
+            g_skipped_packages+=("$package")
+            continue
+        fi
+
+        # Check for pacman conflicts with cargo packages
+        if check_pacman_conflicts "$package" "$bin_name"; then
+            echo "[DEBUG] pacman conflict detected for ${package}" >&2
+            continue
+        fi
+
+        # Check if package is already available
+        if ! is_package_installed "$package" "$bin_name"; then
+            g_missing_mise+=("$package")
+            printf "%b\n" "  ${CRE}❌ ${CYE}$package ${CRE}no instalado${CNC}"
+        else
+            echo "[DEBUG] ${package} appears installed (bin=${bin_name})" >&2
+        fi
+    done
+    
+    # Display skipped packages if any
+    if [ "${#g_skipped_packages[@]}" -gt 0 ]; then
+        printf "\n%b\n" "${CYE}${BLD}⚠️  Paquetes omitidos (${#g_skipped_packages[@]}):${CNC}"
+        for pkg in "${g_skipped_packages[@]}"; do
+            local pip_pkg_name="${pkg#pip:}"
+            printf "%b\n" "${CYE}  • $pkg ${CBL}(instalar con: pip install --user $pip_pkg_name)${CNC}"
+        done
+    fi
+    
+    # Install missing packages
+    if [ "${#g_missing_mise[@]}" -gt 0 ]; then
+        printf "\n%b\n" "${BLD}${CYE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CNC}"
+        printf "%b\n" "${BLD}${CBL}🚀 Instalando ${#g_missing_mise[@]} paquetes MISE...${CNC}"
+        printf "%b\n\n" "${BLD}${CYE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CNC}"
+
+        local start_time=$(date +%s)
+        local count=0
+        for package in "${g_missing_mise[@]}"; do
+            count=$((count + 1))
+            local pkg_start=$(date +%s)
+
+            printf "%b" "${CBL}[$count/${#g_missing_mise[@]}] Instalando: ${CYE}${package}${CNC}"
+
+            if install_package "$package" "$ERROR_LOG"; then
+                local duration=$(($(date +%s) - pkg_start))
+                printf "%b\n" "${CGR} ✅ ${CBL}(${duration}s)${CNC}"
+                g_install_count=$((g_install_count + 1))
+            else
+                printf "%b\n" "${CRE} ❌ Error${CNC}"
+                g_mise_failed+=("$package")
+                log_error "Failed to install: $package"
+            fi
+        done
+
+        g_total_time=$(($(date +%s) - start_time))
+
+        printf "\n%b\n" "${BLD}${CYE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CNC}"
+        if [ "${#g_mise_failed[@]}" -gt 0 ]; then
+            printf "%b\n" "${CRE}${BLD}❌ Algunos paquetes fallaron (${#g_mise_failed[@]}/${#g_missing_mise[@]})${CNC}"
+        else
+            printf "%b\n" "${CGR}${BLD}✅ Todos los paquetes instalados correctamente${CNC}"
+        fi
+        printf "%b\n" "${BLD}${CYE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CNC}"
+    else
+        printf "\n%b\n" "${BLD}${CYE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CNC}"
+        printf "%b\n" "${CGR}${BLD}✅ Todos los paquetes ya están instalados${CNC}"
+        printf "%b\n" "${BLD}${CYE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CNC}"
+    fi
+    
+    # Generate comprehensive summary
+    generate_summary "${#mise_packages[@]}"
+
+    # Calculate total execution time
+    local total_elapsed=$(($(date +%s) - start_time))
+
+    printf "\n%b\n" "${BLD}${CYE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CNC}"
+    printf "%b\n" "${BLD}${CBL}🎉 fmise: Proceso completado${CNC}"
+    printf "%b\n" "${BLD}${CYE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CNC}"
+    printf "\n%b\n" "${CBL}   Tiempo total de ejecución: ${CYE}$(format_duration $total_elapsed)${CNC}"
+    printf "%b\n" "${CBL}   Paquetes procesados: ${CYE}${#mise_packages[@]}${CNC}"
+    printf "%b\n" "${CBL}   Instalados exitosamente: ${CGR}${g_install_count}${CNC}"
+    sleep 60
+    # Return appropriate exit code
+    if [ "${#g_mise_failed[@]}" -gt 0 ]; then
+        return 1
+    fi
+    return 0
+}
+#@
+[[ "${BASH_SOURCE[0]}" == "${0}" ]] && main "$@"

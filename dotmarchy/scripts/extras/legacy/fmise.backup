@@ -1,0 +1,324 @@
+#!/usr/bin/env bash
+# shellcheck shell=bash
+# shfmt: -ln=bash
+#
+# fmise - Install MISE packages globally
+#
+# Installs MISE packages from config or defaults. Only runs if --extras flag is set.
+#
+# @params
+# Globals:
+#   ${INSTALL_EXTRAS}: Must be 1 to run
+#   ${SETUP_CONFIG}: Path to configuration file
+#   ${ERROR_LOG}: Error log path
+# Arguments:
+#   -h|--help: Show help
+# Returns:
+#   0 on success, 1 on failure
+
+set -Eeuo pipefail
+
+readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly mydir="$SCRIPT_DIR"
+readonly HELPER_DIR="${SCRIPT_DIR}/../../helper"
+
+# Source helper libraries
+# shellcheck source=/dev/null
+source "${HELPER_DIR}/load_helpers.sh"
+load_helpers "${HELPER_DIR}" set_variable colors logger prompts checks
+trap on_error ERR
+
+function usage() {
+  echo -e "Usage: fmise [-h|--force]
+
+Install MISE packages globally. Requires --extras flag when called from dotmarchy.
+
+Optional arguments:
+  -h, --help\t\tshow this help message
+  --force\t\t\tforce execution (standalone mode)"
+}
+
+function is_package_installed() {
+    local package="$1"
+    local bin_name="$2"
+
+    # Skip pip packages
+    if [[ "$package" == pip:* ]]; then
+        return 1
+    fi
+
+    # Check if installed via mise
+    if mise list --global 2>/dev/null | grep -qE "^${package}[[:space:]]"; then
+        printf "%b\n" "  ${CGR}✅ ${CYE}$package ${CBL}ya está instalado en mise${CNC}"
+        already_installed_mise+=("$package")
+        return 0
+    fi
+
+    # Special handling for npm packages
+    if [[ "$package" == npm:* ]]; then
+        local npm_pkg_name="${package#npm:}"
+        local escaped_pkg_name
+        escaped_pkg_name=$(printf '%s\n' "$npm_pkg_name" | sed 's/[[\.*^$()+?{|]/\\&/g')
+        if npm list -g --depth=0 2>/dev/null | grep -qE "(├──|└──) ${escaped_pkg_name}@"; then
+            printf "%b\n" "  ${CGR}✅ ${CYE}$package ${CBL}ya está instalado globalmente con npm${CNC}"
+            already_installed_npm+=("$package")
+            return 0
+        fi
+    fi
+
+    # Check if binary is available in PATH
+    if command -v "$bin_name" >/dev/null 2>&1; then
+        printf "%b\n" "  ${CGR}✅ ${CYE}$package ${CBL}ya está disponible en PATH (binario: $bin_name)${CNC}"
+        already_installed_path+=("$package")
+        return 0
+    fi
+
+    return 1
+}
+
+function generate_summary() {
+    local total_packages=${#mise_packages[@]}
+    local already_installed=$(( ${#already_installed_mise[@]} + ${#already_installed_path[@]} + ${#already_installed_npm[@]} + ${#already_installed_pacman[@]} ))
+    local successfully_installed=$(( ${#missing_mise[@]} - ${#mise_failed[@]} ))
+    local failed_count=${#mise_failed[@]}
+
+    printf "\n%b\n" "${BLD}${CYE}📊 RESUMEN DETALLADO DE INSTALACIÓN${CNC}"
+    printf "%b\n" "${BLD}${CYE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CNC}"
+
+    # Total overview
+    printf "%b\n" "${CBL}📦 Total de paquetes procesados: ${CYE}${total_packages}${CNC}"
+
+    # Already installed breakdown
+    if [ ${#already_installed_mise[@]} -gt 0 ]; then
+        printf "%b\n" "${CGR}✅ Ya instalados en MISE: ${CYE}${#already_installed_mise[@]} ${CBL}(${already_installed_mise[*]:0:50}...)${CNC}"
+    fi
+    if [ ${#already_installed_path[@]} -gt 0 ]; then
+        printf "%b\n" "${CGR}✅ Ya disponibles en PATH: ${CYE}${#already_installed_path[@]} ${CBL}(${already_installed_path[*]:0:50}...)${CNC}"
+    fi
+    if [ ${#already_installed_npm[@]} -gt 0 ]; then
+        printf "%b\n" "${CGR}✅ Ya instalados via NPM: ${CYE}${#already_installed_npm[@]} ${CBL}(${already_installed_npm[*]:0:50}...)${CNC}"
+    fi
+    if [ ${#already_installed_pacman[@]} -gt 0 ]; then
+        printf "%b\n" "${CGR}✅ Ya instalados via Pacman: ${CYE}${#already_installed_pacman[@]} ${CBL}(${already_installed_pacman[*]:0:50}...)${CNC}"
+    fi
+
+    # Successfully installed
+    if [ $successfully_installed -gt 0 ]; then
+        printf "%b\n" "${CGR}✅ Instalados correctamente con MISE: ${CYE}${successfully_installed}${CNC}"
+    fi
+
+    # Failed packages
+    if [ $failed_count -gt 0 ]; then
+        printf "%b\n" "${CRE}❌ Fallaron en instalarse: ${CYE}${failed_count}${CNC}"
+        printf "%b\n" "${CRE}   Paquetes: ${mise_failed[*]}${CNC}"
+        printf "%b\n" "${CYE}   → Revisa el log de errores: ${ERROR_LOG}${CNC}"
+    fi
+
+    # Skipped packages
+    if [ ${#skipped_packages[@]} -gt 0 ]; then
+        printf "%b\n" "${CYE}⚠️  Omitidos (${#skipped_packages[@]}): ${skipped_packages[*]}${CNC}"
+        printf "%b\n" "${CYE}   → Estos requieren instalación manual con pip${CNC}"
+    fi
+
+    # Recommendations
+    printf "\n%b\n" "${BLD}${CYE}💡 RECOMENDACIONES${CNC}"
+    printf "%b\n" "${BLD}${CYE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CNC}"
+
+    if [ $failed_count -gt 0 ]; then
+        printf "%b\n" "${CRE}• ${CYE}Paquetes que fallaron pueden requerir dependencias del sistema${CNC}"
+        printf "%b\n" "${CRE}• ${CYE}Revisa los logs en: ${ERROR_LOG}${CNC}"
+        printf "%b\n" "${CRE}• ${CYE}Intenta reinstalar manualmente: mise use --global <paquete>${CNC}"
+    fi
+
+    printf "%b\n" "${CBL}• ${CYE}Verifica las versiones instaladas: mise list --global${CNC}"
+    printf "%b\n" "${CBL}• ${CYE}Actualiza regularmente: mise upgrade${CNC}"
+
+    if command -v mise >/dev/null 2>&1; then
+        printf "%b\n" "${CBL}• ${CYE}Asegúrate de que ~/.local/bin esté en tu PATH${CNC}"
+        printf "%b\n" "${CBL}• ${CYE}Reinicia tu terminal o ejecuta: source ~/.bashrc${CNC}"
+    fi
+
+    # Final status
+    printf "\n%b\n" "${BLD}${CYE}📈 ESTADO FINAL${CNC}"
+    printf "%b\n" "${BLD}${CYE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CNC}"
+
+    if [ $failed_count -eq 0 ]; then
+        printf "%b\n" "${CGR}${BLD}🎉 ¡Instalación completada exitosamente!${CNC}"
+        printf "%b\n" "${CGR}   Todos los paquetes MISE están listos para usar${CNC}"
+    else
+        local success_rate=$(( (total_packages - failed_count) * 100 / total_packages ))
+        printf "%b\n" "${CYE}📊 Tasa de éxito: ${success_rate}% (${total_packages} total, ${failed_count} fallaron)${CNC}"
+        printf "%b\n" "${CYE}⚠️  Revisa los paquetes que fallaron antes de continuar${CNC}"
+    fi
+}
+
+function main() {
+    local force_mode=false
+
+    case "${1:-}" in
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        --force)
+            force_mode=true
+            shift
+            ;;
+    esac
+
+    # Para efectos de prueba, usar setupMISE.conf en lugar de setup.conf
+    SETUP_CONFIG="${HOME}/.config/dotmarchy/setupMISE.conf"
+
+    info "fmise: Iniciando verificación de paquetes MISE..."
+
+    # Only run if --extras is set (when called from dotmarchy) or --force is used
+    if [ "${INSTALL_EXTRAS:-0}" -ne 1 ] && [ "$force_mode" != "true" ]; then
+        warn "fmise: INSTALL_EXTRAS no está activado, saltando instalación de paquetes MISE"
+        warn "Para ejecutar standalone: ./fmise --force"
+        return 0
+    fi
+
+    logo "Instalando paquetes MISE globales"
+    
+    if ! command -v mise >/dev/null 2>&1; then
+        log_error "mise no está instalado"
+        printf "Para instalar mise:\n" >&2
+        printf "  En Arch Linux: sudo pacman -S mise\n" >&2
+        printf "  Otros métodos: curl https://mise.run | sh\n" >&2
+        return 1
+    fi
+    
+    # Load package list
+    local mise_packages=()
+    info "fmise: Buscando archivo de configuración: $SETUP_CONFIG"
+    
+    if [ -f "$SETUP_CONFIG" ]; then
+        info "fmise: Archivo de configuración encontrado, cargando..."
+        # shellcheck source=/dev/null
+        source "$SETUP_CONFIG"
+        # Handle both empty arrays and unset variables
+        if [ "${EXTRA_MISE_PACKAGES+set}" = "set" ] && [ "${#EXTRA_MISE_PACKAGES[@]}" -gt 0 ]; then
+            mise_packages=("${EXTRA_MISE_PACKAGES[@]}")
+            info "fmise: Encontrados ${#mise_packages[@]} paquetes en EXTRA_MISE_PACKAGES"
+        else
+            warn "fmise: EXTRA_MISE_PACKAGES no está definido o está vacío en $SETUP_CONFIG"
+        fi
+    else
+        warn "fmise: Archivo de configuración no encontrado: $SETUP_CONFIG"
+    fi
+    
+    # If no packages configured, show message and exit
+    if [ "${#mise_packages[@]}" -eq 0 ]; then
+        warn "fmise: No hay paquetes MISE configurados para instalar"
+        return 0
+    fi
+    
+    printf "\n%b\n" "${BLD}${CYE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CNC}"
+    printf "%b\n" "${BLD}${CBL}📦 Paquetes configurados (${#mise_packages[@]}):${CNC}"
+    printf "%b\n" "${BLD}${CYE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CNC}"
+
+    local cols=4
+    local i=0
+    for package in "${mise_packages[@]}"; do
+        if [ $(( i % cols )) -eq 0 ]; then
+            printf "\n  "
+        fi
+        printf "%b" "${CBL}• ${CYE}$package${CNC}"
+        if [ $(( i % cols )) -ne $(( cols - 1 )) ] && [ $i -lt $(( ${#mise_packages[@]} - 1 )) ]; then
+            printf "    "
+        fi
+        i=$(( i + 1 ))
+    done
+    printf "\n\n%b\n\n" "${BLD}${CYE}🔍 Verificando paquetes MISE...${CNC}"
+    
+    # Track different installation statuses
+    local missing_mise=()
+    local skipped_packages=()
+    local already_installed_mise=()
+    local already_installed_path=()
+    local already_installed_npm=()
+    local already_installed_pacman=()
+    
+    for package in "${mise_packages[@]}"; do
+        # Extract binary name from package spec
+        local bin_name="$package"
+        if [[ "$package" == *":"* ]]; then
+            bin_name="${package#*:}"
+        fi
+
+        # Skip pip packages (mise doesn't support pip, only pipx)
+        if [[ "$package" == pip:* ]]; then
+            warn "Saltando $package (mise no soporta 'pip:', solo 'pipx:' para aplicaciones CLI)"
+            skipped_packages+=("$package")
+            continue
+        fi
+
+        # Check for pacman-installed cargo packages to avoid duplication
+        if [[ "$package" == cargo:* ]]; then
+            local pacman_pkg="$bin_name"
+            [[ "$bin_name" == "bob-nvim" ]] && pacman_pkg="bob"
+            [[ "$bin_name" == "tree-sitter-cli" ]] && pacman_pkg="tree-sitter"
+
+            if is_installed "$pacman_pkg" 2>/dev/null; then
+                printf "%b\n" "  ${CGR}✅ ${CYE}$package ${CBL}ya está instalado con pacman ($pacman_pkg)${CNC}"
+                already_installed_pacman+=("$package")
+                continue
+            fi
+        fi
+
+        # Check if package is already available
+        if ! is_package_installed "$package" "$bin_name"; then
+            missing_mise+=("$package")
+            printf "%b\n" "  ${CRE}❌ ${CYE}$package ${CRE}no instalado${CNC}"
+        fi
+    done
+    
+    # Mostrar paquetes omitidos si los hay
+    if [ "${#skipped_packages[@]}" -gt 0 ]; then
+        printf "\n%b\n" "${CYE}${BLD}⚠️  Paquetes omitidos (${#skipped_packages[@]}):${CNC}"
+        for pkg in "${skipped_packages[@]}"; do
+            local pip_pkg_name="${pkg#pip:}"
+            printf "%b\n" "${CYE}  • $pkg ${CBL}(instalar con: pip install $pip_pkg_name)${CNC}"
+        done
+    fi
+    
+    # Install missing packages
+    if [ "${#missing_mise[@]}" -gt 0 ]; then
+        printf "\n%b\n" "${BLD}${CYE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CNC}"
+        printf "%b\n" "${BLD}${CBL}🚀 Instalando ${#missing_mise[@]} paquetes MISE...${CNC}"
+        printf "%b\n\n" "${BLD}${CYE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CNC}"
+
+        local mise_failed=()
+        for package in "${missing_mise[@]}"; do
+            printf "%b" "${CBL}📦 Instalando: ${CYE}$package${CNC}..."
+            if mise use --global "$package" >>"$ERROR_LOG" 2>&1; then
+                printf "%b\n" "${CGR} ✅ Correcto${CNC}"
+            else
+                printf "%b\n" "${CRE} ❌ Error${CNC}"
+                mise_failed+=("$package")
+            fi
+        done
+
+        printf "\n%b\n" "${BLD}${CYE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CNC}"
+        if [ "${#mise_failed[@]}" -gt 0 ]; then
+            printf "%b\n" "${CRE}${BLD}❌ Algunos paquetes fallaron: ${mise_failed[*]}${CNC}"
+        else
+            printf "%b\n" "${CGR}${BLD}✅ Todos los paquetes instalados correctamente${CNC}"
+        fi
+        printf "%b\n" "${BLD}${CYE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CNC}"
+    else
+        printf "\n%b\n" "${BLD}${CYE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CNC}"
+        printf "%b\n" "${CGR}${BLD}✅ Todos los paquetes ya están instalados${CNC}"
+        printf "%b\n" "${BLD}${CYE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CNC}"
+    fi
+    
+    # Generate comprehensive summary
+    generate_summary
+
+    printf "\n%b\n" "${BLD}${CYE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CNC}"
+    printf "%b\n" "${BLD}${CBL}🎉 fmise: Instalación de paquetes MISE completada${CNC}"
+    printf "%b\n" "${BLD}${CYE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CNC}"
+}
+
+[[ "${BASH_SOURCE[0]}" == "${0}" ]] && main "$@"
+

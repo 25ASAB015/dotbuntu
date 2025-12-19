@@ -1,0 +1,174 @@
+#!/usr/bin/env bash
+# shellcheck shell=bash
+# shfmt: -ln=bash
+#
+# dotmarchy - Main entry point and router script
+#
+# Modular dotfiles installation and system setup tool for Arch Linux.
+# Routes commands to appropriate scripts following the dotbare architecture pattern.
+# This is an orchestrator script that delegates work to specialized modules.
+#
+# Usage:
+#   dotmarchy [OPTIONS] [REPO_URL]
+#
+# Options:
+#   --extras       Install extra packages (npm, cargo, pip, etc.)
+#   --setup-env    Setup environment (directories, repos, shell config)
+#   --verify       Run verification checks and exit
+#   --repo URL     Override default dotfiles repository URL
+#   -h, --help     Show this help message and exit
+#
+# Examples:
+#   dotmarchy
+#   dotmarchy --extras --setup-env
+#   dotmarchy --repo git@github.com:user/dotfiles.git
+#   dotmarchy --verify
+#
+# Exit Codes:
+#   0: Success
+#   1: General failure
+#   2: Invalid input/arguments
+#   3: Missing dependencies
+#
+# @author: dotmarchy
+# @version: 2.0.0
+
+set -Eeuo pipefail
+
+#######################################
+# Constants and Configuration
+#######################################
+readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly SCRIPT_NAME="$(basename "${BASH_SOURCE[0]}")"
+readonly DOTMARCHY_VERSION="v2.0.0"
+readonly HELPER_DIR="${SCRIPT_DIR}/helper"
+
+# Exit codes
+readonly EXIT_SUCCESS=0
+readonly EXIT_FAILURE=1
+readonly EXIT_INVALID_INPUT=2
+readonly EXIT_DEPENDENCY_MISSING=3
+
+#######################################
+# Load Dependencies (order matters)
+#######################################
+# shellcheck source=/dev/null
+source "${HELPER_DIR}/load_helpers.sh"
+load_helpers "${HELPER_DIR}" set_variable colors logger utils checks prompts
+
+#######################################
+# Global Variables Documentation
+#
+# Configuration Variables (from set_variable.sh):
+#   DOTMARCHY_VERSION (string): Current version
+#   DOTBARE_DIR (string): Location of bare repository (default: $HOME/.cfg)
+#   DOTBARE_TREE (string): Working tree location (default: $HOME)
+#   REPO_URL (string): Git repository URL for dotfiles
+#   SETUP_CONFIG (string): Path to setup configuration file
+#   ERROR_LOG (string): Path to error log file
+#   INSTALL_EXTRAS (integer): Flag for installing extras (0|1)
+#   SETUP_ENVIRONMENT (integer): Flag for environment setup (0|1)
+#   VERIFY_MODE (integer): Flag for verification mode (0|1)
+#   FORCE (integer): Force flag (0|1)
+#   VERBOSE (integer): Verbose flag (0|1)
+#
+# Color Variables (from colors.sh):
+#   BLD, CGR, CRE, CYE, CBL, CNC
+#
+# Functions (from logger.sh):
+#   info(msg): Log informational message
+#   warn(msg): Log warning message
+#   log_error(msg): Log error message
+#   debug(msg): Log debug message (if VERBOSE=1)
+#
+# Functions (from utils.sh):
+#   run(): Execute command with logging/timing
+#   require_cmd(cmd): Ensure command exists or exit
+#   normalize_repo_url(url): Normalize git URL
+#   ssh_to_https(url): Convert SSH URL to HTTPS
+#   check_ssh_auth(): Verify SSH authentication
+#   get_nvm_dir(): Resolve NVM directory
+#   preflight_utils(): Check required utilities
+#   ensure_node_available(): Ensure Node.js/npm availability
+#   dotmarchy_usage(): Show primary CLI help
+#   parse_arguments(): Parse CLI arguments and set flags
+#   initialize_error_log(): Reset error log file
+#   execute_core_script(name, [critical]): Run core scripts with guard
+#   execute_extras_script(name): Run extras scripts
+#   execute_setup_script(name): Run setup scripts
+#   configure_dotbare(): Configure dotbare (critical)
+#   execute_core_operations(): Run core installation flow
+#   execute_extras_operations(): Run extras flow
+#   execute_setup_operations(): Run setup flow
+#   run_verification_mode(): Execute verification mode and exit
+#
+# Functions (from checks.sh):
+#   initial_checks(): Perform system validation
+#
+# Functions (from prompts.sh):
+#   welcome(): Display welcome banner and get confirmation
+#   farewell(): Display completion message
+#   ask_yes_no(question): Interactive yes/no prompt
+#
+# DO NOT reimplement any of these functions.
+#######################################
+
+#######################################
+# Error Handling
+#######################################
+trap on_error ERR
+
+#######################################
+# Main entry point
+#######################################
+# Arguments:
+#   $@: Command-line arguments
+#
+# Returns:
+#   EXIT_SUCCESS: Installation completed successfully
+#   EXIT_FAILURE: Installation encountered critical errors
+#######################################
+main() {
+
+    # Parse command-line arguments and set flags
+    parse_arguments "$@"
+    
+    # Initialize error log for fresh diagnostics
+    initialize_error_log
+    
+    # Perform initial system checks (Arch Linux, internet, etc.)
+    initial_checks
+    
+    # Handle verification mode (exits if active)
+    run_verification_mode
+    
+    # Display welcome banner and get user confirmation
+    welcome
+    
+    # ===== PHASE 1: DOTBARE CONFIGURATION =====
+    # Must run first to make setup.conf available
+    configure_dotbare
+    
+    # ===== PHASE 2: CORE OPERATIONS =====
+    # Always executed
+    execute_core_operations
+    
+    # ===== PHASE 3: EXTRAS OPERATIONS =====
+    # Only if --extras flag set
+    execute_extras_operations
+    
+    # ===== PHASE 4: ENVIRONMENT SETUP =====
+    # Only if --setup-env flag set
+    execute_setup_operations
+    
+    # ===== COMPLETION =====
+    farewell
+    
+    return "$EXIT_SUCCESS"
+
+}
+
+# Execute only if invoked directly (not sourced)
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    main "$@"
+fi

@@ -1,0 +1,197 @@
+#!/usr/bin/env bash
+# shellcheck shell=bash
+# fenv-setup - Unified environment setup (replicates monolithic UX)
+#
+# This script provides a unified view of all environment setup operations
+# in a single screen, exactly like the monolithic version.
+
+set -Eeuo pipefail
+
+readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly mydir="$SCRIPT_DIR"
+readonly HELPER_DIR="${SCRIPT_DIR}/../../helper"
+
+# Source required helpers
+# shellcheck source=/dev/null
+source "${HELPER_DIR}/load_helpers.sh"
+load_helpers "${HELPER_DIR}" set_variable colors logger prompts utils
+trap on_error ERR
+
+function usage() {
+    echo "Usage: fenv-setup [-h] - Unified environment setup"
+    echo ""
+    echo "Configures development environment in a single unified screen:"
+    echo "  [1] Create directories"
+    echo "  [2] Clone repositories"
+    echo "  [3] Download scripts"
+    echo "  [4] Configure shell"
+}
+
+function main() {
+    [[ "${1:-}" =~ ^(-h|--help)$ ]] && usage && exit 0
+    [ "${SETUP_ENVIRONMENT:-0}" -ne 1 ] && return 0
+    
+    # Single clear and logo at the beginning (monolithic style)
+    clear 2>/dev/null || true
+    logo "Configurando entorno de desarrollo"
+    sleep 2
+    
+    printf "\n%b\n" "${BLD}${CYE}[--setup-env] Configurando entorno personalizado...${CNC}"
+    
+    # Check for config file
+    if [ ! -f "$SETUP_CONFIG" ]; then
+        warn "Archivo de configuración no encontrado: $SETUP_CONFIG"
+        info "Ejecuta el script sin configuración o crea el archivo de configuración."
+        info "Ejemplo de configuración en: https://github.com/25ASAB015/dotmarchy"
+        sleep 3
+        return 0
+    fi
+    
+    printf "%b\n\n" "${BLD}${CBL}Cargando configuración desde $SETUP_CONFIG...${CNC}"
+    
+    # Load configuration
+    # shellcheck source=/dev/null
+    source "$SETUP_CONFIG"
+    
+    # [1] Create directories
+    if [ "${#DIRECTORIES[@]}" -gt 0 ]; then
+        printf "\n%b\n" "${BLD}${CGR}[${CYE}1${CGR}]${CNC} ${BLD}Creando estructura de directorios (${#DIRECTORIES[@]} total)...${CNC}\n"
+        
+        local created=0
+        local existed=0
+        
+        for dir in "${DIRECTORIES[@]}"; do
+            local expanded_dir="${dir/#\~/$HOME}"
+            
+            if [ -d "$expanded_dir" ]; then
+                printf "  %b\n" "${CBL}✓${CNC} ${dir} ${BLD}(ya existe)${CNC}"
+                : $((existed++))
+            else
+                if mkdir -p "$expanded_dir" 2>> "$ERROR_LOG"; then
+                    printf "  %b\n" "${CGR}✓${CNC} ${BLD}${dir}${CNC} ${CGR}(creado)${CNC}"
+                    : $((created++))
+                else
+                    log_error "Error al crear directorio: $expanded_dir"
+                    printf "  %b\n" "${CRE}✗${CNC} ${dir} ${CRE}(error)${CNC}"
+                fi
+            fi
+        done
+        
+        # Summary
+        if [ $created -gt 0 ] || [ $existed -gt 0 ]; then
+            printf "\n"
+            [ $created -gt 0 ] && info "  → $created directorio(s) creado(s)"
+            [ $existed -gt 0 ] && info "  → $existed directorio(s) ya existía(n)"
+        fi
+    fi
+    
+    # [2] Clone repositories
+    if [ "${#GIT_REPOS[@]}" -gt 0 ]; then
+        printf "\n%b\n" "${BLD}${CGR}[${CYE}2${CGR}]${CNC} ${BLD}Clonando repositorios (${#GIT_REPOS[@]} total)...${CNC}"
+        
+        for entry in "${GIT_REPOS[@]}"; do
+            local url dest
+            
+            # Parse URL:DEST format (handle URLs with : like https:// or git@host:)
+            if [[ $entry =~ ^(.+):([~/].*)$ ]]; then
+                url="${BASH_REMATCH[1]}"
+                dest="${BASH_REMATCH[2]}"
+            else
+                url="${entry% *}"
+                dest="${entry##* }"
+            fi
+            
+            dest=$(eval echo "$dest")
+            local repo_name
+            repo_name=$(basename "$url" .git)
+            
+            if [ -d "$dest" ]; then
+                printf "  %b\n" "${CBL}✓${CNC} ${BLD}${repo_name}${CNC} → ${dest} ${BLD}(ya existe)${CNC}"
+            else
+                printf "  %b\n" "${CYE}→${CNC} Clonando ${BLD}${repo_name}${CNC} → ${dest}..."
+                if git clone "$url" "$dest" >> "$ERROR_LOG" 2>&1; then
+                    printf "    %b\n" "${CGR}✓ Clonado exitosamente${CNC}"
+                else
+                    log_error "Error al clonar $url a $dest"
+                    printf "    %b\n" "${CRE}✗ Error al clonar${CNC}"
+                fi
+            fi
+        done
+        printf "\n"
+    fi
+    
+    # [3] Download scripts
+    if [ "${#SCRIPTS[@]}" -gt 0 ]; then
+        printf "\n%b\n" "${BLD}${CGR}[${CYE}3${CGR}]${CNC} ${BLD}Descargando scripts (${#SCRIPTS[@]} total)...${CNC}"
+        
+        for entry in "${SCRIPTS[@]}"; do
+            local url dest
+            
+            # Parse URL:DEST format
+            if [[ $entry =~ ^(.+):([~/].*)$ ]]; then
+                url="${BASH_REMATCH[1]}"
+                dest="${BASH_REMATCH[2]}"
+            else
+                url="${entry% *}"
+                dest="${entry##* }"
+            fi
+            
+            dest=$(eval echo "$dest")
+            mkdir -p "$(dirname "$dest")"
+            local script_name
+            script_name=$(basename "$dest")
+            
+            if [ -f "$dest" ]; then
+                printf "  %b\n" "${CBL}✓${CNC} ${BLD}${script_name}${CNC} → ${dest} ${BLD}(ya existe)${CNC}"
+            else
+                printf "  %b\n" "${CYE}→${CNC} Descargando ${BLD}${script_name}${CNC} → ${dest}..."
+                if curl -sL "$url" > "$dest" 2>> "$ERROR_LOG"; then
+                    chmod +x "$dest"
+                    printf "    %b\n" "${CGR}✓ Descargado y hecho ejecutable${CNC}"
+                else
+                    log_error "Error al descargar $url a $dest"
+                    printf "    %b\n" "${CRE}✗ Error al descargar${CNC}"
+                fi
+            fi
+        done
+        printf "\n"
+    fi
+    
+    # [4] Configure shell
+    if [ "${#SHELL_LINES[@]}" -gt 0 ]; then
+        printf "\n%b\n" "${BLD}${CGR}[${CYE}4${CGR}]${CNC} ${BLD}Configurando shell (${#SHELL_LINES[@]} línea(s))...${CNC}"
+        
+        local shell_config=""
+        if [ -f "$HOME/.zshrc" ]; then
+            shell_config="$HOME/.zshrc"
+        elif [ -f "$HOME/.bashrc" ]; then
+            shell_config="$HOME/.bashrc"
+        else
+            warn "No se encontró archivo de configuración de shell (.zshrc o .bashrc)"
+            return 1
+        fi
+        
+        for line in "${SHELL_LINES[@]}"; do
+            if grep -Fxq "$line" "$shell_config"; then
+                printf "  %b\n" "${BLD}${CGR}✓ environment setup${CNC} ${BLD}(ya configurado en $(basename "$shell_config"))${CNC}"
+            else
+                {
+                    echo ""
+                    echo "# Added by dotmarchy - environment setup"
+                    echo "$line"
+                } >> "$shell_config"
+                printf "  %b\n" "${CGR}✓${CNC} Agregado ${BLD}environment setup${CNC} a ${CBL}$(basename "$shell_config")${CNC}"
+            fi
+        done
+        printf "\n"
+    fi
+    
+    # Final message
+    printf "\n%b\n\n" "${BLD}${CGR}✓ Configuración del entorno completada!${CNC}"
+    info "Nota: Reinicia tu shell o ejecuta 'source ~/.zshrc' (o ~/.bashrc) para aplicar cambios."
+    
+    sleep 3
+}
+
+[[ "${BASH_SOURCE[0]}" == "${0}" ]] && main "$@"
+

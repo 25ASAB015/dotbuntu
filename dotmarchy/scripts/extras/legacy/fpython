@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+# shellcheck shell=bash
+# fpython - Install Python packages (pip/pipx)
+
+set -Eeuo pipefail
+
+readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly mydir="$SCRIPT_DIR"
+readonly HELPER_DIR="${SCRIPT_DIR}/../../helper"
+
+# Source helper libraries
+# shellcheck source=/dev/null
+source "${HELPER_DIR}/load_helpers.sh"
+load_helpers "${HELPER_DIR}" set_variable colors logger prompts
+trap on_error ERR
+
+function usage() { echo "Usage: fpython [-h] - Install Python packages (pip/pipx)"; }
+
+function main() {
+    [[ "${1:-}" =~ ^(-h|--help)$ ]] && usage && exit 0
+    [ "${INSTALL_EXTRAS:-0}" -ne 1 ] && return 0
+    
+    clear 2>/dev/null || true
+    logo "Instalando Paquetes de Python (pip/pipx)"
+    sleep 2
+    
+    command -v python3 >/dev/null 2>&1 || { log_error "python3 no instalado"; return 1; }
+    
+    # Detect Arch Linux (PEP 668)
+    local use_pipx_only=0
+    [ -f /etc/os-release ] && {
+        # shellcheck source=/dev/null
+        . /etc/os-release
+        [[ "${ID:-}" = "arch" ]] || [[ ${ID_LIKE:-} == *"arch"* ]] && {
+            print_info "Arch Linux detectado - usando solo pipx (PEP 668)"
+            use_pipx_only=1
+        }
+    }
+    
+    # Ensure pipx
+    print_info "Verificando pipx..."
+    command -v pipx >/dev/null 2>&1 || {
+        if [ $use_pipx_only -eq 1 ]; then
+            print_info "pipx no instalado. Instalando python-pipx con pacman..."
+            if ! sudo pacman -S --noconfirm python-pipx 2>&1 | tee -a "$ERROR_LOG" >/dev/null; then
+                log_error "Error al instalar python-pipx"
+                return 1
+            fi
+        else
+            python3 -m pip install --user pipx 2>&1 | grep -v "already satisfied" || true
+        fi
+    }
+    
+    pipx ensurepath --force 2>&1 | grep -v "already in PATH" || true
+    export PATH="$HOME/.local/bin:$PATH"
+    
+    # pip packages (only if not Arch)
+    [ $use_pipx_only -eq 0 ] && {
+        local pip_pkgs="pynvim jedi pygments"
+        [ -f "$SETUP_CONFIG" ] && {
+            # shellcheck source=/dev/null
+            source "$SETUP_CONFIG"
+            pip_pkgs="${PIP_PACKAGES[*]:-$pip_pkgs}"
+        }
+        
+        print_info "Instalando bibliotecas pip..."
+        for pkg in $pip_pkgs; do
+            python3 -m pip install --user "$pkg" 2>&1 | grep -v "already satisfied" || true
+        done
+    }
+    
+    # pipx packages
+    local pipx_pkgs="doq beautysh black ruff neovim-remote flake8 python-lsp-server pyright rich-cli trash-cli codespell"
+    [ -f "$SETUP_CONFIG" ] && {
+        # shellcheck source=/dev/null
+        source "$SETUP_CONFIG"
+        pipx_pkgs="${PIPX_PACKAGES[*]:-$pipx_pkgs}"
+    }
+    
+    print_info "Instalando aplicaciones pipx..."
+    for pkg in $pipx_pkgs; do
+        pipx list 2>/dev/null | grep -q "package $pkg" && \
+            printf "%b\n" "${BLD}${CGR}$pkg instalado${CNC}" || {
+            printf "%b\n" "${BLD}${CBL}Instalando: $pkg${CNC}"
+            pipx install "$pkg" >>"$ERROR_LOG" 2>&1 || log_error "Error: $pkg"
+        }
+    done
+    
+    printf "\n%b\n" "${BLD}${CGR}Paquetes Python instalados!${CNC}"
+    sleep 3
+}
+
+[[ "${BASH_SOURCE[0]}" == "${0}" ]] && main "$@"
+

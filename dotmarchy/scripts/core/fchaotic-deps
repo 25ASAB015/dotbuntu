@@ -1,0 +1,140 @@
+#!/usr/bin/env bash
+# shellcheck shell=bash
+# shfmt: -ln=bash
+#
+# fchaotic-deps - Install dependencies from Chaotic-AUR repository
+#
+# Installs pre-compiled packages from Chaotic-AUR. Always installs paru (AUR helper).
+# If --extras flag is set, also installs additional packages from SETUP_CONFIG or defaults.
+#
+# @params
+# Globals:
+#   ${INSTALL_EXTRAS}: Flag for extra packages
+#   ${SETUP_CONFIG}: Path to setup configuration
+#   ${DEFAULT_EXTRA_CHAOTIC_DEPENDENCIES}: Default extra packages
+#   ${ERROR_LOG}: Path to error log file
+# Arguments:
+#   -h|--help: Show help message and exit
+# Returns:
+#   0 on success
+#   1 on failure
+
+set -Eeuo pipefail
+
+# Determine script directory
+readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly mydir="$SCRIPT_DIR"
+readonly HELPER_DIR="${SCRIPT_DIR}/../../helper"
+
+# Source required helpers
+# shellcheck source=/dev/null
+source "${HELPER_DIR}/load_helpers.sh"
+load_helpers "${HELPER_DIR}" set_variable colors logger prompts checks
+
+# Setup error trap
+trap on_error ERR
+
+#######################################
+# Display usage information
+#######################################
+function usage() {
+  echo -e "Usage: fchaotic-deps [-h]
+
+Install pre-compiled packages from Chaotic-AUR repository.
+Always installs paru (AUR helper). With --extras flag, installs additional packages.
+
+Default packages:
+  paru (AUR helper)
+
+Optional arguments:
+  -h, --help\t\tshow this help message and exit."
+}
+
+#######################################
+# Main function - install Chaotic-AUR dependencies
+#######################################
+function main() {
+    if [[ "${1:-}" == "-h" ]] || [[ "${1:-}" == "--help" ]]; then
+        usage
+        exit 0
+    fi
+    
+    clear 2>/dev/null || true
+    logo "Instalando las dependencias necesarias desde el repositorio chaotic"
+    sleep 2
+    
+    # Build dependency list
+    local chaotic_dependencies="paru"
+    
+    # Add extra dependencies if --extras flag is set
+    if [ "${INSTALL_EXTRAS:-0}" -eq 1 ]; then
+        local extra_chaotic=""
+        if [ -f "$SETUP_CONFIG" ]; then
+            # shellcheck source=/dev/null
+            source "$SETUP_CONFIG"
+            extra_chaotic="${EXTRA_CHAOTIC_DEPENDENCIES[*]:-$DEFAULT_EXTRA_CHAOTIC_DEPENDENCIES}"
+        else
+            extra_chaotic="$DEFAULT_EXTRA_CHAOTIC_DEPENDENCIES"
+        fi
+        
+        chaotic_dependencies="$chaotic_dependencies $extra_chaotic"
+        printf "\n%b\n" "${BLD}${CYE}[--extras] Incluyendo paquetes adicionales opcionales desde Chaotic-AUR${CNC}"
+    fi
+    
+    printf "%b\n\n" "${BLD}${CBL}Verificando las dependencias necesarias...${CNC}"
+    sleep 2
+    
+    # Detect missing packages
+    local missing_chaotic_pkgs=""
+    for pkg in $chaotic_dependencies; do
+        if ! is_installed "$pkg"; then
+            missing_chaotic_pkgs="$missing_chaotic_pkgs $pkg"
+            printf "%b\n" " ${BLD}${CYE}$pkg ${CRE}no instalado${CNC}"
+        else
+            printf "%b\n" "${BLD}${CGR}$pkg ${CBL}ya está instalado${CNC}"
+        fi
+    done
+    
+    # Batch installation if needed
+    if [ -n "$(printf "%s" "$missing_chaotic_pkgs" | tr -s ' ')" ]; then
+        local count
+        count=$(printf "%s" "$missing_chaotic_pkgs" | wc -w)
+        printf "\n%b\n\n" "${BLD}${CYE}Instalando $count paquetes, por favor espera...${CNC}"
+        
+        # shellcheck disable=SC2086
+        if sudo pacman -S --noconfirm $missing_chaotic_pkgs 2>&1 | tee -a "$ERROR_LOG" >/dev/null; then
+            # Verify complete installation
+            local failed_chaotic_pkgs=""
+            for pkg in $missing_chaotic_pkgs; do
+                if ! is_installed "$pkg"; then
+                    failed_chaotic_pkgs="$failed_chaotic_pkgs $pkg"
+                    log_error "Error al instalar: $pkg"
+                fi
+            done
+            
+            # Show final results
+            if [ -z "$(printf "%s" "$failed_chaotic_pkgs" | tr -s ' ')" ]; then
+                printf "%b\n\n" "${BLD}${CGR}Todos los paquetes se han instalado correctamente!${CNC}"
+            else
+                local fail_count
+                fail_count=$(printf "%s" "$failed_chaotic_pkgs" | wc -w)
+                printf "%b\n" "${BLD}${CRE}Error al instalar $fail_count paquetes:${CNC}"
+                printf "%b\n\n" "  ${BLD}${CYE}$(printf "%s" "$failed_chaotic_pkgs")${CNC}"
+            fi
+        else
+            log_error "Error crítico durante la instalación por lotes"
+            printf "%b\n" "${BLD}${CRE}Error al instalar! Verifica el log para más detalles${CNC}"
+            return 1
+        fi
+    else
+        printf "\n%b\n" "${BLD}${CGR}Todas las dependencias ya están instaladas!${CNC}"
+    fi
+    
+    sleep 3
+}
+
+# Execute only if invoked directly
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    main "$@"
+fi
+

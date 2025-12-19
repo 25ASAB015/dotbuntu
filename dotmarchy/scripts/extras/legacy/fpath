@@ -1,0 +1,141 @@
+#!/usr/bin/env bash
+# shellcheck shell=bash
+# fpath - Configure PATH environment variable (full implementation from monolithic)
+
+set -Eeuo pipefail
+
+readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly mydir="$SCRIPT_DIR"
+readonly HELPER_DIR="${SCRIPT_DIR}/../../helper"
+
+# Source helper libraries
+# shellcheck source=/dev/null
+source "${HELPER_DIR}/load_helpers.sh"
+load_helpers "${HELPER_DIR}" set_variable colors logger prompts
+trap on_error ERR
+
+function usage() {
+    echo "Usage: fpath [-h] - Configure PATH environment variable"
+    echo ""
+    echo "Configures PATH with all necessary binaries:"
+    echo "  - Cargo/Rust binaries"
+    echo "  - Local binaries (~/.local/bin)"
+    echo "  - Ruby gems (auto-discovery)"
+    echo "  - Luarocks"
+    echo "  - Go binaries"
+    echo "  - NVM (Node Version Manager)"
+    echo "  - Deno"
+    echo "  - pynvim venv"
+    echo ""
+    echo "Also configures Fish shell if installed."
+}
+
+function main() {
+    [[ "${1:-}" =~ ^(-h|--help)$ ]] && usage && exit 0
+    [ "${INSTALL_EXTRAS:-0}" -ne 1 ] && return 0
+    
+    clear 2>/dev/null || true
+    logo "Configurando Variables de Entorno (PATH)"
+    sleep 2
+    
+    local shell_config=""
+    local shell_name=""
+    
+    # Detectar shell y archivo de configuración
+    if [ -n "${ZSH_VERSION:-}" ] || [ -f "$HOME/.zshrc" ]; then
+        shell_config="$HOME/.zshrc"
+        shell_name="zsh"
+    elif [ -n "${BASH_VERSION:-}" ] || [ -f "$HOME/.bashrc" ]; then
+        shell_config="$HOME/.bashrc"
+        shell_name="bash"
+    fi
+    
+    if [ -z "$shell_config" ]; then
+        warn "No se pudo detectar shell. Configura el PATH manualmente."
+        return
+    fi
+    
+    print_info "Configurando PATH en $shell_config..."
+    
+    # Crear backup del archivo de configuración
+    cp "$shell_config" "${shell_config}.backup-$(date +%Y%m%d-%H%M%S)"
+    
+    # Agregar configuración de PATH si no existe
+    local marker="# dotmarchy - Configuración de PATH automática"
+    
+    if ! grep -q "$marker" "$shell_config" 2>/dev/null; then
+        cat >> "$shell_config" << 'PATHEOF'
+
+# dotmarchy - Configuración de PATH automática
+# Cargo (Rust) binaries
+export PATH="$HOME/.cargo/bin:$PATH"
+
+# Local binaries
+export PATH="$HOME/.local/bin:$PATH"
+
+# Ruby gems (descubrir versión automáticamente)
+if [ -d "$HOME/.local/share/gem/ruby" ]; then
+  GEM_BIN="$(echo "$HOME/.local/share/gem/ruby"/*/bin 2>/dev/null | awk '{print $1}')"
+  [ -d "$GEM_BIN" ] && export PATH="$GEM_BIN:$PATH"
+fi
+
+# Luarocks
+export PATH="$HOME/.luarocks/bin:$PATH"
+
+# Go binaries (si se usan)
+export PATH="$HOME/go/bin:$PATH"
+
+# NVM (Node Version Manager) - prioriza XDG, luego ~/.nvm
+export NVM_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/nvm"
+[ -d "$NVM_DIR" ] || NVM_DIR="$HOME/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+[ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"
+
+# Deno
+export DENO_INSTALL="$HOME/.local"
+export PATH="$DENO_INSTALL/bin:$PATH"
+
+# pynvim venv (si existe - para Arch)
+[ -d "$HOME/.local/share/pynvim-venv/bin" ] && export PATH="$HOME/.local/share/pynvim-venv/bin:$PATH"
+
+PATHEOF
+        printf "%b\n" "  ${BLD}${CGR}Configuración de PATH agregada a $shell_config${CNC}"
+    else
+        printf "%b\n" "  ${BLD}${CGR}Configuración de PATH ya existe en $shell_config${CNC}"
+    fi
+    
+    # Configurar para Fish si está instalado
+    if command -v fish >/dev/null 2>&1 && [ -d "$HOME/.config/fish" ]; then
+        local fish_config="$HOME/.config/fish/config.fish"
+        [ -f "$fish_config" ] || touch "$fish_config"
+        
+        if ! grep -q "dotmarchy - Configuración de PATH" "$fish_config" 2>/dev/null; then
+            cat >> "$fish_config" << 'FISHEOF'
+
+# dotmarchy - Configuración de PATH automática
+set -gx PATH $HOME/.cargo/bin $PATH
+set -gx PATH $HOME/.local/bin $PATH
+set -gx PATH $HOME/.luarocks/bin $PATH
+set -gx PATH $HOME/go/bin $PATH
+set -gx DENO_INSTALL $HOME/.local
+set -gx PATH $DENO_INSTALL/bin $PATH
+FISHEOF
+            printf "%b\n" "  ${BLD}${CGR}Configuración de PATH agregada a Fish shell${CNC}"
+        fi
+    fi
+    
+    echo ""
+    printf "%b\n" "  ${BLD}${CGR}PATH configurado correctamente!${CNC}"
+    echo ""
+    printf "%b\n" "${CYE}${BLD}IMPORTANTE:${CNC} Para aplicar los cambios, ejecuta:"
+    echo ""
+    printf "%b\n" "  ${CGR}source $shell_config${CNC}"
+    printf "%b\n" "  ${CGR}exec $shell_name${CNC}"
+    echo ""
+    printf "%b\n" "O simplemente ${BLD}cierra y vuelve a abrir tu terminal${CNC}"
+    echo ""
+    
+    sleep 3
+}
+
+[[ "${BASH_SOURCE[0]}" == "${0}" ]] && main "$@"

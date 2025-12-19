@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# fruby - Install Ruby gems
+
+set -Eeuo pipefail
+
+readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly mydir="$SCRIPT_DIR"
+readonly HELPER_DIR="${SCRIPT_DIR}/../../helper"
+
+# Source helper libraries
+# shellcheck source=/dev/null
+source "${HELPER_DIR}/load_helpers.sh"
+load_helpers "${HELPER_DIR}" set_variable colors logger prompts
+trap on_error ERR
+
+function usage() { echo "Usage: fruby [-h] - Install Ruby gems"; }
+
+function main() {
+    [[ "${1:-}" =~ ^(-h|--help)$ ]] && usage && exit 0
+    [ "${INSTALL_EXTRAS:-0}" -ne 1 ] && return 0
+    
+    clear 2>/dev/null || true
+    logo "Instalando Gemas de Ruby"
+    sleep 2
+    
+    command -v gem >/dev/null 2>&1 || { log_error "gem no instalado"; return 1; }
+    
+    local gem_pkgs="neovim"
+    [ -f "$SETUP_CONFIG" ] && {
+        # shellcheck source=/dev/null
+        source "$SETUP_CONFIG"
+        gem_pkgs="${GEM_PACKAGES[*]:-$gem_pkgs}"
+    }
+    
+    print_info "Instalando gemas de Ruby..."
+    for pkg in $gem_pkgs; do
+        gem list | grep -q "^$pkg " && \
+            printf "%b\n" "${BLD}${CGR}$pkg instalado${CNC}" || {
+            printf "%b\n" "${BLD}${CBL}Instalando: $pkg${CNC}"
+            gem install --user-install "$pkg" >>"$ERROR_LOG" 2>&1 || log_error "Error: $pkg"
+        }
+    done
+    
+    printf "\n%b\n" "${BLD}${CGR}Gemas instaladas!${CNC}"
+    sleep 3
+}
+
+[[ "${BASH_SOURCE[0]}" == "${0}" ]] && main "$@"
+

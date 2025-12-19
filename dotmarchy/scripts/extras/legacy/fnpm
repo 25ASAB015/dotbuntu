@@ -1,0 +1,132 @@
+#!/usr/bin/env bash
+# shellcheck shell=bash
+# shfmt: -ln=bash
+#
+# fnpm - Install npm packages globally
+#
+# Installs npm packages from config or defaults. Only runs if --extras flag is set.
+#
+# @params
+# Globals:
+#   ${INSTALL_EXTRAS}: Must be 1 to run
+# INSTALL_EXTRAS=1 ./fnpm
+#   ${SETUP_CONFIG}: Path to configuration file
+#   ${DEFAULT_EXTRA_NPM_PACKAGES}: Default packages
+#   ${ERROR_LOG}: Error log path
+# Arguments:
+#   -h|--help: Show help
+# Returns:
+#   0 on success, 1 on failure
+
+set -Eeuo pipefail
+
+readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly mydir="$SCRIPT_DIR"
+readonly HELPER_DIR="${SCRIPT_DIR}/../../helper"
+
+# Source helper libraries
+# shellcheck source=/dev/null
+source "${HELPER_DIR}/load_helpers.sh"
+load_helpers "${HELPER_DIR}" set_variable colors logger prompts
+trap on_error ERR
+
+function usage() {
+  echo -e "Usage: fnpm [-h]
+
+Install npm packages globally. Requires --extras flag.
+
+Optional arguments:
+  -h, --help\t\tshow this help message"
+}
+
+function main() {
+    [[ "${1:-}" == "-h" ]] || [[ "${1:-}" == "--help" ]] && usage && exit 0
+    
+    # Only run if --extras is set
+    [ "${INSTALL_EXTRAS:-0}" -ne 1 ] && return 0
+    
+    clear 2>/dev/null || true
+    logo "Instalando paquetes npm globales..."
+    sleep 2
+    
+    if ! command -v npm >/dev/null 2>&1; then
+        log_error "npm no está instalado"
+        return 1
+    fi
+    
+    # Load package list
+    local npm_packages=""
+    if [ -f "$SETUP_CONFIG" ]; then
+        # shellcheck source=/dev/null
+        source "$SETUP_CONFIG"
+        npm_packages="${EXTRA_NPM_PACKAGES[*]:-$DEFAULT_EXTRA_NPM_PACKAGES}"
+    else
+        npm_packages="$DEFAULT_EXTRA_NPM_PACKAGES"
+    fi
+    
+    printf "\n%b\n" "${BLD}${CYE}[--extras] Instalando paquetes npm globales...${CNC}"
+    printf "%b\n\n" "${BLD}${CBL}Verificando paquetes npm...${CNC}"
+    sleep 2
+    
+    # Function to extract base package name (remove @latest, versions, etc.)
+    extract_package_name() {
+        local pkg="$1"
+        # Remove @latest, @beta, @alpha, etc. but preserve scoped packages (@scope/pkg)
+        # Pattern: remove @version or @tag at the end, but keep @scope at the start
+        if [[ "$pkg" =~ ^@[^/]+/ ]]; then
+            # Scoped package: @scope/pkg@version -> @scope/pkg
+            echo "${pkg%%@*}"
+        else
+            # Regular package: pkg@version -> pkg
+            echo "${pkg%%@*}"
+        fi
+    }
+    
+    # Detect missing packages
+    local missing_npm=""
+    for pkg in $npm_packages; do
+        # Extract base package name for verification
+        local pkg_name
+        pkg_name=$(extract_package_name "$pkg")
+        
+        # Use npm list -g to check if package is installed (more reliable)
+        # npm list returns exit code 0 if installed, 1 if not
+        if npm list -g "$pkg_name" --depth=0 >/dev/null 2>&1; then
+            printf "%b\n" "${BLD}${CGR}$pkg ${CBL}ya está instalado${CNC}"
+        else
+            missing_npm="$missing_npm $pkg"
+            printf "%b\n" " ${BLD}${CYE}$pkg ${CRE}no instalado${CNC}"
+        fi
+    done
+    
+    # Install missing packages
+    if [ -n "$(printf "%s" "$missing_npm" | tr -s ' ')" ]; then
+        local count
+        count=$(printf "%s" "$missing_npm" | wc -w)
+        printf "\n%b\n\n" "${BLD}${CYE}Instalando $count paquetes npm...${CNC}"
+        
+        local npm_failed=""
+        for pkg in $missing_npm; do
+            printf "%b\n" "${BLD}${CBL}Instalando: ${pkg}${CNC}"
+            if npm install -g "$pkg" >>"$ERROR_LOG" 2>&1; then
+                printf "%b\n" "  ${BLD}${CGR}Instalado!${CNC}"
+            else
+                log_error "Error al instalar: $pkg"
+                npm_failed="$npm_failed $pkg"
+                printf "%b\n" "  ${BLD}${CRE}Error${CNC}"
+            fi
+            sleep 0.5
+        done
+        
+        [ -n "$(printf "%s" "$npm_failed" | tr -s ' ')" ] && \
+            printf "%b\n" "\n${BLD}${CRE}Algunos paquetes fallaron: $npm_failed${CNC}" || \
+            printf "\n%b\n\n" "${BLD}${CGR}Todos instalados!${CNC}"
+    else
+        printf "\n%b\n\n" "${BLD}${CGR}Todos ya instalados!${CNC}"
+    fi
+    
+    sleep 3
+}
+
+[[ "${BASH_SOURCE[0]}" == "${0}" ]] && main "$@"
+

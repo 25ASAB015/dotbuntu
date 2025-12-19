@@ -1,0 +1,122 @@
+#!/usr/bin/env bash
+# shellcheck shell=bash
+# shfmt: -ln=bash
+#
+# fzsh - Ensure Zsh is installed and set as default shell
+#
+# Installs Zsh if missing, adds it to /etc/shells when necessary, and switches
+# the user's login shell to Zsh. Designed to be idempotent and safe to run
+# multiple times.
+
+set -Eeuo pipefail
+
+# Determine script directory
+readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly mydir="$SCRIPT_DIR"
+readonly HELPER_DIR="${SCRIPT_DIR}/../../helper"
+
+# Source required helpers
+# shellcheck source=/dev/null
+source "${HELPER_DIR}/load_helpers.sh"
+load_helpers "${HELPER_DIR}" set_variable colors logger checks
+
+# Setup error trap
+trap on_error ERR
+
+#######################################
+# Install Zsh if it's missing
+# Uses pacman for installation and logs output to ERROR_LOG
+#######################################
+ensure_zsh_installed() {
+    if is_installed "zsh"; then
+        debug "zsh ya está instalado"
+        return 0
+    fi
+
+    info "Instalando zsh (shell base)..."
+    local install_output
+    local install_status=0
+    install_output=$(sudo pacman -S --noconfirm zsh 2>&1) || install_status=$?
+    echo "$install_output" >> "$ERROR_LOG"
+
+    if [ $install_status -ne 0 ]; then
+        warn "No se pudo instalar zsh automáticamente"
+        log_error "Fallo instalando zsh con pacman"
+        return 1
+    fi
+
+    info "zsh instalado correctamente"
+}
+
+#######################################
+# Register Zsh in /etc/shells if needed
+# Ensures chsh can switch to Zsh
+#######################################
+register_zsh_shell() {
+    local zsh_path
+    zsh_path="$(command -v zsh || true)"
+
+    if [ -z "$zsh_path" ]; then
+        warn "zsh no está disponible para registrarlo en /etc/shells"
+        return 1
+    fi
+
+    if grep -Fxq "$zsh_path" /etc/shells; then
+        debug "zsh ya está registrado en /etc/shells"
+        return 0
+    fi
+
+    info "Registrando ${zsh_path} en /etc/shells (se puede solicitar contraseña)..."
+    if echo "$zsh_path" | sudo tee -a /etc/shells >/dev/null; then
+        info "zsh registrado en /etc/shells"
+    else
+        warn "No se pudo registrar zsh en /etc/shells"
+        log_error "Fallo al escribir ${zsh_path} en /etc/shells"
+        return 1
+    fi
+}
+
+#######################################
+# Switch default shell to Zsh for current user
+# Skips if already using Zsh
+#######################################
+switch_to_zsh() {
+    local zsh_path
+    zsh_path="$(command -v zsh || true)"
+
+    if [ -z "$zsh_path" ]; then
+        warn "zsh no está disponible para establecerlo como shell"
+        return 1
+    fi
+
+    # If already default, skip
+    local current_shell
+    current_shell="$(getent passwd "$USER" | cut -d: -f7 2>/dev/null || echo "${SHELL:-}")"
+    if [ "$current_shell" = "$zsh_path" ]; then
+        info "Zsh ya es la shell predeterminada (${zsh_path})"
+        return 0
+    fi
+
+    info "Cambiando la shell predeterminada a zsh (puede solicitar contraseña)..."
+    if chsh -s "$zsh_path" "$USER"; then
+        info "Shell cambiada a zsh. Abre una nueva sesión para aplicarla."
+    else
+        warn "No se pudo cambiar la shell a zsh automáticamente"
+        log_error "chsh -s ${zsh_path} ${USER} falló"
+        return 1
+    fi
+}
+
+#######################################
+# Main function - ensure Zsh is installed and configured
+#######################################
+main() {
+    ensure_zsh_installed || return 1
+    register_zsh_shell || true
+    switch_to_zsh || true
+}
+
+# Execute only if invoked directly
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    main "$@"
+fi

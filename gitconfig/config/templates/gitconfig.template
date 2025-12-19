@@ -1,0 +1,130 @@
+# ============================================================================
+# Configuración Git Profesional
+# Generado automáticamente el {{DATE}}
+# Usuario: {{USER_NAME}} <{{USER_EMAIL}}>
+# ============================================================================
+
+[user]
+	name = {{USER_NAME}}
+	email = {{USER_EMAIL}}{{GPG_SIGNING_KEY}}
+
+[commit]{{GPG_SIGN_COMMITS}}
+	template = ~/.gitmessage
+
+[credential]
+	helper = {{CREDENTIAL_HELPER}}{{CREDENTIAL_STORE}}
+
+[init]
+	defaultBranch = master
+
+[core]
+	editor = nano
+	autocrlf = false
+	filemode = true
+	ignorecase = false
+	precomposeUnicode = true
+	quotepath = false
+
+[push]
+	default = simple
+	followTags = true
+	autoSetupRemote = true
+
+[pull]
+	rebase = false
+	ff = only
+
+[fetch]
+	prune = true
+	pruneTags = true
+
+[merge]
+	tool = vimdiff
+	conflictstyle = diff3
+
+[diff]
+	tool = vimdiff
+	algorithm = histogram
+	colorMoved = default
+
+[status]
+	showUntrackedFiles = all
+
+[branch]
+	autoSetupMerge = always
+	autoSetupRebase = never
+
+[rerere]
+	enabled = true
+
+[help]
+	autoCorrect = 1
+
+[color]
+	ui = auto
+	branch = auto
+	diff = auto
+	status = auto
+	showBranch = auto
+
+[color "branch"]
+	current = yellow reverse
+	local = yellow
+	remote = green
+
+[color "diff"]
+	meta = yellow bold
+	frag = magenta bold
+	old = red bold
+	new = green bold
+
+[color "status"]
+	added = yellow
+	changed = green
+	untracked = cyan
+
+[alias]
+	# Aliases básicos
+	st = status -s
+	co = checkout
+	br = branch
+	ci = commit
+	df = diff
+	dc = diff --cached
+	lg = log --oneline --decorate --graph --all
+	ls = log --pretty=format:"%C(yellow)%h%Cred%d\\\\ %Creset%s%Cblue\\\\ [%cn]" --decorate
+	ll = log --pretty=format:"%C(yellow)%h%Cred%d\\\\ %Creset%s%Cblue\\\\ [%cn]" --decorate --numstat
+
+	# Aliases avanzados
+	unstage = reset HEAD --
+	last = log -1 HEAD
+	visual = !gitk
+	type = cat-file -t
+	dump = cat-file -p
+
+	# Aliases para trabajo con ramas
+	branches = branch -a
+	remotes = remote -v
+	tags = tag -l
+
+	# Aliases para estadísticas
+	stats = shortlog -sn
+	contributors = shortlog -s -n
+
+	# Aliases para GitHub
+	hub = !gh
+	pr = !gh pr
+	issue = !gh issue
+
+[url "git@github.com:"]
+	insteadOf = https://github.com/
+
+[github]
+	user = {{GITHUB_USER}}
+
+# Configuración específica para diferentes repositorios
+# Descomenta y modifica según necesites:
+# [includeIf "gitdir:~/work/"]
+#     path = ~/.gitconfig-work
+# [includeIf "gitdir:~/personal/"]
+#     path = ~/.gitconfig-personal

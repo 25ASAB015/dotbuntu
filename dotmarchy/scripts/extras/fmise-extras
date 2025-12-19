@@ -1,0 +1,519 @@
+#!/usr/bin/env bash
+# shellcheck shell=bash
+# shfmt: -i 4 -ci -sr -bn
+#
+# fmise-extras - Complementary tools installer for MISE
+#
+# Installs tools and configurations that complement fmise but are not
+# available through MISE. This script handles special cases like PATH
+# configuration, GitHub releases, and system-specific setups.
+#
+# Author: dotmarchy project
+# Version: 1.0.0
+#
+# @params
+# Globals:
+#   INSTALL_EXTRAS : Must be 1 to run (or use --force)
+#   SETUP_CONFIG   : Path to configuration file
+#   ERROR_LOG      : Error log path
+# Arguments:
+#   -h, --help     : Show help message
+#   -f, --force    : Force execution (standalone mode)
+#   -v, --verbose  : Enable verbose output
+# Returns:
+#   0 : All operations completed successfully
+#   1 : Some operations failed
+
+set -Eeuo pipefail
+
+readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly SCRIPT_NAME="$(basename "${BASH_SOURCE[0]}")"
+readonly SCRIPT_VERSION="1.0.0"
+readonly HELPER_DIR="${SCRIPT_DIR}/../../helper"
+
+# Source helper libraries
+# shellcheck source=/dev/null
+source "${HELPER_DIR}/load_helpers.sh"
+load_helpers "${HELPER_DIR}" set_variable colors logger prompts utils
+
+# Error handling
+trap on_error ERR
+
+# ============================================================================
+# GLOBAL STATE MANAGEMENT
+# ============================================================================
+
+# Configuration variables
+declare -g VERBOSE=false
+
+# ============================================================================
+# UTILITY FUNCTIONS
+# ============================================================================
+
+function verbose_log() {
+    if [ "$VERBOSE" = true ]; then
+        info "$@"
+    fi
+}
+
+function get_github_release_url() {
+    local repo="$1"
+    local pattern="$2"
+    local auth_header=()
+
+    [ -n "${GITHUB_TOKEN:-}" ] && auth_header=(-H "Authorization: token $GITHUB_TOKEN")
+
+    # shellcheck disable=SC2086
+    curl -s "${auth_header[@]}" "https://api.github.com/repos/$repo/releases/latest" \
+        | jq -r ".assets[] | select(.name | contains(\"$pattern\")) | .browser_download_url"
+}
+
+# ============================================================================
+# PATH CONFIGURATION FUNCTIONS
+# ============================================================================
+
+function configure_path() {
+    local shell_config=""
+    local shell_name=""
+
+    # Detect shell and config file
+    if [ -n "${ZSH_VERSION:-}" ] || [ -f "$HOME/.zshrc" ]; then
+        shell_config="$HOME/.zshrc"
+        shell_name="zsh"
+    elif [ -n "${BASH_VERSION:-}" ] || [ -f "$HOME/.bashrc" ]; then
+        shell_config="$HOME/.bashrc"
+        shell_name="bash"
+    fi
+
+    if [ -z "$shell_config" ]; then
+        warn "Could not detect shell. Configure PATH manually."
+        return 1
+    fi
+
+    print_info "Configuring PATH in $shell_config..."
+
+    # Create backup
+    cp "$shell_config" "${shell_config}.backup-$(date +%Y%m%d-%H%M%S)"
+
+    # Add PATH configuration if not exists
+    local marker="# dotmarchy - Automatic PATH configuration"
+
+    if ! grep -q "$marker" "$shell_config" 2>/dev/null; then
+        cat >> "$shell_config" << 'PATHEOF'
+
+# dotmarchy - Automatic PATH configuration
+# Cargo (Rust) binaries
+export PATH="$HOME/.cargo/bin:$PATH"
+
+# Local binaries
+export PATH="$HOME/.local/bin:$PATH"
+
+# Ruby gems (auto-discover version)
+if [ -d "$HOME/.local/share/gem/ruby" ]; then
+  GEM_BIN="$(echo "$HOME/.local/share/gem/ruby"/*/bin 2>/dev/null | awk '{print $1}')"
+  [ -d "$GEM_BIN" ] && export PATH="$GEM_BIN:$PATH"
+fi
+
+# Luarocks
+export PATH="$HOME/.luarocks/bin:$PATH"
+
+# Go binaries
+export PATH="$HOME/go/bin:$PATH"
+
+# NVM (Node Version Manager) - prefers XDG, then ~/.nvm
+export NVM_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/nvm"
+[ -d "$NVM_DIR" ] || NVM_DIR="$HOME/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+[ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"
+
+# Deno
+export DENO_INSTALL="$HOME/.local"
+export PATH="$DENO_INSTALL/bin:$PATH"
+
+# pynvim venv (for Arch Linux)
+[ -d "$HOME/.local/share/pynvim-venv/bin" ] && export PATH="$HOME/.local/share/pynvim-venv/bin:$PATH"
+
+PATHEOF
+        printf "%b\n" "  ${BLD}${CGR}PATH configuration added to $shell_config${CNC}"
+    else
+        printf "%b\n" "  ${BLD}${CGR}PATH configuration already exists in $shell_config${CNC}"
+    fi
+
+    # Configure Fish shell if installed
+    if command -v fish >/dev/null 2>&1 && [ -d "$HOME/.config/fish" ]; then
+        local fish_config="$HOME/.config/fish/config.fish"
+        [ -f "$fish_config" ] || touch "$fish_config"
+
+        if ! grep -q "dotmarchy - Automatic PATH configuration" "$fish_config" 2>/dev/null; then
+            cat >> "$fish_config" << 'FISHEOF'
+
+# dotmarchy - Automatic PATH configuration
+set -gx PATH $HOME/.cargo/bin $PATH
+set -gx PATH $HOME/.local/bin $PATH
+set -gx PATH $HOME/.luarocks/bin $PATH
+set -gx PATH $HOME/go/bin $PATH
+set -gx DENO_INSTALL $HOME/.local
+set -gx PATH $DENO_INSTALL/bin $PATH
+FISHEOF
+            printf "%b\n" "  ${BLD}${CGR}PATH configuration added to Fish shell${CNC}"
+        fi
+    fi
+
+    echo ""
+    printf "%b\n" "  ${BLD}${CGR}PATH configured successfully!${CNC}"
+    echo ""
+    printf "%b\n" "${CYE}${BLD}IMPORTANT:${CNC} To apply changes, run:"
+    echo ""
+    printf "%b\n" "  ${CGR}source $shell_config${CNC}"
+    printf "%b\n" "  ${CGR}exec $shell_name${CNC}"
+    echo ""
+    printf "%b\n" "Or simply ${BLD}close and reopen your terminal${CNC}"
+    echo ""
+}
+
+# ============================================================================
+# GITHUB RELEASES INSTALLATION
+# ============================================================================
+
+function install_github_releases() {
+    local auth_header=()
+    [ -n "${GITHUB_TOKEN:-}" ] && auth_header=(-H "Authorization: token $GITHUB_TOKEN")
+
+    # NVM (Node Version Manager)
+    if [ ! -d "${XDG_CONFIG_HOME:-$HOME/.config}/nvm" ] && [ ! -d "$HOME/.nvm" ]; then
+        print_info "Installing NVM..."
+        mkdir -p "$(dirname "${XDG_CONFIG_HOME:-$HOME/.config}/nvm")"
+        curl -sS https://raw.githubusercontent.com/nvm-sh/nvm/master/install.sh | bash
+        printf "%b\n" "  ${BLD}${CGR}NVM installed${CNC}"
+    else
+        printf "%b\n" "${BLD}${CGR}NVM already installed${CNC}"
+    fi
+
+    # Lua Language Server
+    if ! command -v lua-language-server >/dev/null 2>&1; then
+        print_info "Installing Lua Language Server..."
+        local arch=$(uname -m)
+        [[ $arch == "aarch64" ]] && arch="arm64"
+        [[ $arch == "x86_64" ]] && arch="x64"
+
+        # shellcheck disable=SC2086
+        local url=$(get_github_release_url "LuaLS/lua-language-server" "linux-$arch")
+
+        if [ -n "$url" ]; then
+            wget -q "$url" -O /tmp/lua-ls.tar.gz
+            mkdir -p "$HOME/.local/share/lua-language-server"
+            tar -xzf /tmp/lua-ls.tar.gz -C "$HOME/.local/share/lua-language-server"
+            cat > "$HOME/.local/bin/lua-language-server" << 'EOF'
+#!/usr/bin/env bash
+exec "$HOME/.local/share/lua-language-server/bin/lua-language-server" "$@"
+EOF
+            chmod +x "$HOME/.local/bin/lua-language-server"
+            rm /tmp/lua-ls.tar.gz
+            printf "%b\n" "  ${BLD}${CGR}Lua Language Server installed${CNC}"
+        fi
+    else
+        printf "%b\n" "${BLD}${CGR}lua-language-server already installed${CNC}"
+    fi
+
+    # lazygit
+    if ! command -v lazygit >/dev/null 2>&1; then
+        print_info "Installing lazygit..."
+        local arch=$(uname -m)
+
+        # shellcheck disable=SC2086
+        local url=$(get_github_release_url "jesseduffield/lazygit" "Linux_$arch")
+
+        if [ -n "$url" ]; then
+            wget -q "$url" -O /tmp/lazygit.tar.gz
+            tar -xzf /tmp/lazygit.tar.gz -C /tmp
+            mv /tmp/lazygit "$HOME/.local/bin/"
+            chmod +x "$HOME/.local/bin/lazygit"
+            rm /tmp/lazygit.tar.gz
+            printf "%b\n" "  ${BLD}${CGR}lazygit installed${CNC}"
+        fi
+    else
+        printf "%b\n" "${BLD}${CGR}lazygit already installed${CNC}"
+    fi
+
+    # GitHub CLI
+    if ! command -v gh >/dev/null 2>&1; then
+        print_info "Installing GitHub CLI..."
+        local arch=$(uname -m)
+        [[ $arch == "aarch64" ]] && arch="arm64"
+        [[ $arch == "x86_64" ]] && arch="amd64"
+
+        # shellcheck disable=SC2086
+        local url=$(get_github_release_url "cli/cli" "linux_$arch.tar.gz")
+
+        if [ -n "$url" ]; then
+            wget -q "$url" -O /tmp/gh.tar.gz
+            tar -xzf /tmp/gh.tar.gz -C /tmp
+            cp /tmp/gh_*/bin/gh "$HOME/.local/bin/"
+            chmod +x "$HOME/.local/bin/gh"
+            rm -rf /tmp/gh.tar.gz /tmp/gh_*
+            printf "%b\n" "  ${BLD}${CGR}gh installed${CNC}"
+        fi
+    else
+        printf "%b\n" "${BLD}${CGR}gh already installed${CNC}"
+    fi
+
+    # zoxide
+    if ! command -v zoxide >/dev/null 2>&1; then
+        print_info "Installing zoxide..."
+        curl -sS https://raw.githubusercontent.com/ajeetdsouza/zoxide/main/install.sh | bash
+        printf "%b\n" "  ${BLD}${CGR}zoxide installed${CNC}"
+    else
+        printf "%b\n" "${BLD}${CGR}zoxide already installed${CNC}"
+    fi
+
+    # tldr (tealdeer)
+    if ! command -v tldr >/dev/null 2>&1; then
+        print_info "Installing tldr..."
+        local arch=$(uname -m)
+        [[ $arch == "aarch64" ]] && arch="arm-musleabi"
+        [[ $arch == "x86_64" ]] && arch="x86_64-musl"
+
+        # shellcheck disable=SC2086
+        local url=$(get_github_release_url "dbrgn/tealdeer" "linux-$arch")
+
+        if [ -n "$url" ]; then
+            wget -q "$url" -O "$HOME/.local/bin/tldr"
+            chmod +x "$HOME/.local/bin/tldr"
+            "$HOME/.local/bin/tldr" --update >/dev/null 2>&1 || true
+            printf "%b\n" "  ${BLD}${CGR}tldr installed${CNC}"
+        fi
+    else
+        printf "%b\n" "${BLD}${CGR}tldr already installed${CNC}"
+    fi
+
+    # Deno
+    if ! command -v deno >/dev/null 2>&1; then
+        print_info "Installing Deno..."
+        curl -fsSL https://deno.land/x/install/install.sh | DENO_INSTALL="$HOME/.local" sh
+        printf "%b\n" "  ${BLD}${CGR}Deno installed${CNC}"
+    else
+        printf "%b\n" "${BLD}${CGR}deno already installed${CNC}"
+    fi
+}
+
+# ============================================================================
+# RUST/CARGO SETUP
+# ============================================================================
+
+function setup_rust() {
+    # Ensure cargo bin directory is in PATH
+    export PATH="$HOME/.cargo/bin:$PATH"
+
+    # Check if cargo is available, install rustup if needed
+    if ! command -v cargo >/dev/null 2>&1; then
+        print_info "Cargo not found. Installing rustup..."
+        if curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y; then
+            # shellcheck source=/dev/null
+            [ -f "$HOME/.cargo/env" ] && source "$HOME/.cargo/env"
+            # Ensure PATH is set
+            export PATH="$HOME/.cargo/bin:$PATH"
+            # Verify cargo is now available
+            if ! command -v cargo >/dev/null 2>&1; then
+                log_error "rustup installed but cargo not available. Check installation."
+                return 1
+            fi
+        else
+            log_error "Error installing rustup."
+            printf "%b\n" "${BLD}${CYE}For manual Rust installation:${CNC}"
+            printf "%b\n" "  ${BLD}${CGR}Arch Linux:${CNC} sudo pacman -S rust"
+            printf "%b\n" "  ${BLD}${CGR}Other systems:${CNC} curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"
+            return 1
+        fi
+    else
+        # Cargo is available, but ensure PATH includes cargo bin directory
+        export PATH="$HOME/.cargo/bin:$PATH"
+    fi
+
+    printf "%b\n" "${BLD}${CGR}Rust/Cargo ready${CNC}"
+}
+
+# ============================================================================
+# PYTHON PEP 668 COMPLIANCE
+# ============================================================================
+
+function setup_python_pep668() {
+    # Detect Arch Linux (PEP 668)
+    local use_pipx_only=0
+    if [ -f /etc/os-release ]; then
+        # shellcheck source=/dev/null
+        . /etc/os-release
+        [[ "${ID:-}" = "arch" ]] || [[ ${ID_LIKE:-} == *"arch"* ]] && {
+            print_info "Arch Linux detected - using pipx only (PEP 668 compliance)"
+            use_pipx_only=1
+        }
+    fi
+
+    # Install pipx if needed
+    if ! command -v pipx >/dev/null 2>&1; then
+        if [ $use_pipx_only -eq 1 ]; then
+            print_info "Installing python-pipx..."
+            if ! sudo pacman -S --noconfirm python-pipx >>"$ERROR_LOG" 2>&1; then
+                log_error "Error installing python-pipx"
+                return 1
+            fi
+        else
+            print_info "Installing pipx via pip..."
+            python3 -m pip install --user pipx >>"$ERROR_LOG" 2>&1 || {
+                log_error "Error installing pipx"
+                return 1
+            }
+        fi
+    fi
+
+    # Ensure pipx path
+    pipx ensurepath --force >>"$ERROR_LOG" 2>&1 || true
+    export PATH="$HOME/.local/bin:$PATH"
+
+    printf "%b\n" "${BLD}${CGR}Python/pipx ready${CNC}"
+}
+
+# ============================================================================
+# HELP AND DOCUMENTATION
+# ============================================================================
+
+function usage() {
+    cat << EOF
+${BLD}${CBL}fmise-extras${CNC} - Complementary Tools Installer v${SCRIPT_VERSION}
+
+${BLD}USAGE:${CNC}
+    ${SCRIPT_NAME} [OPTIONS]
+
+${BLD}DESCRIPTION:${CNC}
+    Installs tools and configurations that complement fmise but are not
+    available through MISE. Handles special cases like PATH configuration,
+    GitHub releases, Rust setup, and Python PEP 668 compliance.
+
+${BLD}OPTIONS:${CNC}
+    -h, --help          Show this help message and exit
+    -f, --force         Force execution (standalone mode, bypasses INSTALL_EXTRAS check)
+    -v, --verbose       Enable verbose output for debugging
+
+${BLD}FEATURES:${CNC}
+    ${CGR}PATH Configuration${CNC}   - Automatic PATH setup for all tools
+    ${CGR}GitHub Releases${CNC}      - Direct installation from GitHub APIs
+    ${CGR}Rust Setup${CNC}           - Auto-install rustup if cargo missing
+    ${CGR}PEP 668 Compliance${CNC}   - Smart pip vs pipx for Arch Linux
+    ${CGR}Shell Support${CNC}        - Configures bash, zsh, and fish
+
+${BLD}CONFIGURATION:${CNC}
+    Config file: ${CYE}~/.config/dotmarchy/setup.conf${CNC}
+    Array name:  ${CYE}MISE_PACKAGES${CNC} (inherited from fmise)
+
+${BLD}EXAMPLES:${CNC}
+    ${CYE}# Run after fmise (integrated mode)${CNC}
+    ./install_all_dependencies.sh --extras
+
+    ${CYE}# Standalone mode${CNC}
+    ./${SCRIPT_NAME} --force
+
+    ${CYE}# Verbose output${CNC}
+    ./${SCRIPT_NAME} --force --verbose
+
+${BLD}EXIT CODES:${CNC}
+    ${CGR}0${CNC} - All operations completed successfully
+    ${CRE}1${CNC} - Some operations failed
+
+${BLD}ENVIRONMENT VARIABLES:${CNC}
+    ${CYE}INSTALL_EXTRAS${CNC}  - Must be 1 to run (or use --force)
+    ${CYE}SETUP_CONFIG${CNC}    - Override config file path
+    ${CYE}GITHUB_TOKEN${CNC}    - Optional: GitHub API authentication
+
+${BLD}DEPENDENCIES:${CNC}
+    curl, wget, jq, tar (for GitHub installations)
+
+EOF
+}
+
+# ============================================================================
+# MAIN EXECUTION
+# ============================================================================
+
+function main() {
+    local force_mode=false
+
+    # Parse command line arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -h|--help)
+                usage
+                exit 0
+                ;;
+            -f|--force)
+                force_mode=true
+                shift
+                ;;
+            -v|--verbose)
+                VERBOSE=true
+                shift
+                ;;
+            *)
+                log_error "Unknown option: $1"
+                usage
+                exit 2
+                ;;
+        esac
+    done
+
+    # Configuration
+    SETUP_CONFIG="${SETUP_CONFIG:-${HOME}/.config/dotmarchy/setup.conf}"
+
+    # Banner
+    printf "\n%b\n" "${BLD}${CYE}╔══════════════════════════════════════════════════════════════════════╗${CNC}"
+    printf "%b\n" "${BLD}${CYE}║               🔧 MISE Extras - Complementary Tools                   ║${CNC}"
+    printf "%b\n" "${BLD}${CYE}╚══════════════════════════════════════════════════════════════════════╝${CNC}"
+
+    if [ "$VERBOSE" = true ]; then
+        printf "%b\n" "${CYE}${BLD}📝 VERBOSE MODE: Enabled${CNC}\n"
+    fi
+
+    # Check execution mode
+    if [ "${INSTALL_EXTRAS:-0}" -ne 1 ] && [ "$force_mode" != "true" ]; then
+        warn "INSTALL_EXTRAS not set. Use --force for standalone mode."
+        info "Usage: ${CYE}$SCRIPT_NAME --force${CNC}"
+        return 0
+    fi
+
+    print_info "Starting fmise-extras setup..."
+
+    # Run all setup functions
+    echo ""
+    printf "%b\n" "${BLD}${CYE}🔧 Setting up Rust/Cargo environment...${CNC}"
+    setup_rust
+
+    echo ""
+    printf "%b\n" "${BLD}${CYE}🐍 Setting up Python/PEP 668 compliance...${CNC}"
+    setup_python_pep668
+
+    echo ""
+    printf "%b\n" "${BLD}${CYE}🐙 Installing tools from GitHub releases...${CNC}"
+    install_github_releases
+
+    echo ""
+    printf "%b\n" "${BLD}${CYE}🛣️  Configuring PATH environment...${CNC}"
+    configure_path
+
+    # Success summary
+    printf "\n%b\n" "${BLD}${CYE}╔══════════════════════════════════════════════════════════════════════╗${CNC}"
+    printf "%b\n" "${BLD}${CYE}║                    🎉 FISE-EXTRAS COMPLETED                          ║${CNC}"
+    printf "%b\n" "${BLD}${CYE}╚══════════════════════════════════════════════════════════════════════╝${CNC}"
+
+    printf "%b\n" "${BLD}${CGR}✅ Complementary tools and configurations installed!${CNC}"
+    printf "%b\n" "${CBL}   Rust/Cargo, Python/pipx, GitHub tools, and PATH configured${CNC}"
+
+    printf "\n%b\n" "${BLD}${CYE}🔄 Next steps:${CNC}"
+    printf "%b\n" "${CBL}   1. Close and reopen your terminal, or run:${CNC}"
+    printf "%b\n" "${CBL}      source ~/.bashrc  # (or ~/.zshrc)${CNC}"
+    printf "%b\n" "${CBL}   2. Test the installed tools${CNC}"
+
+    return 0
+}
+
+# Script entry point
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    main "$@"
+fi

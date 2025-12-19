@@ -1,0 +1,148 @@
+#!/usr/bin/env bash
+# shellcheck shell=bash
+# f cargo - Install Rust/Cargo packages
+#
+# Installs Rust tools via cargo. Only runs if --extras set.
+
+set -Eeuo pipefail
+
+readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly mydir="$SCRIPT_DIR"
+readonly HELPER_DIR="${SCRIPT_DIR}/../../helper"
+
+# Source required helpers
+# shellcheck source=/dev/null
+source "${HELPER_DIR}/load_helpers.sh"
+load_helpers "${HELPER_DIR}" set_variable colors logger prompts
+trap on_error ERR
+
+function usage() {
+  echo "Usage: fcargo [-h]
+Install Rust/cargo packages. Requires --extras flag."
+}
+
+function main() {
+    [[ "${1:-}" =~ ^(-h|--help)$ ]] && usage && exit 0
+    [ "${INSTALL_EXTRAS:-0}" -ne 1 ] && return 0
+    
+    # Load package list first to check if there are any packages to install
+    local cargo_packages="bob-nvim tree-sitter-cli stylua"
+    [ -f "$SETUP_CONFIG" ] && {
+        # shellcheck source=/dev/null
+        source "$SETUP_CONFIG"
+        # Handle both empty arrays and unset variables
+        if [ "${CARGO_PACKAGES+set}" = "set" ] && [ "${#CARGO_PACKAGES[@]}" -gt 0 ]; then
+            cargo_packages="${CARGO_PACKAGES[*]}"
+        fi
+    }
+    
+    # Normalize package list (handle empty arrays and whitespace)
+    cargo_packages=$(printf "%s" "$cargo_packages" | tr -s ' ' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    
+    # If no packages configured, exit silently
+    [ -z "$cargo_packages" ] && return 0
+    
+    clear 2>/dev/null || true
+    logo "Instalando Herramientas de Rust (cargo)"
+    sleep 2
+    
+    # Ensure cargo bin directory is in PATH (critical for verification)
+    export PATH="$HOME/.cargo/bin:$PATH"
+    
+    # Check if cargo is available, install rustup if needed (like monolithic)
+    if ! command -v cargo >/dev/null 2>&1; then
+        warn "cargo no está instalado. Instalando rustup..."
+        if curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y; then
+            # shellcheck source=/dev/null
+            [ -f "$HOME/.cargo/env" ] && source "$HOME/.cargo/env"
+            # Ensure PATH is set (env file should do this, but be explicit)
+            export PATH="$HOME/.cargo/bin:$PATH"
+            # Verify cargo is now available
+            if ! command -v cargo >/dev/null 2>&1; then
+                log_error "rustup se instaló pero cargo no está disponible. Verifica la instalación."
+                printf "\n%b\n" "${BLD}${CYE}Continuando con otros extras...${CNC}\n"
+                return 0
+            fi
+        else
+            log_error "Error al instalar rustup. Saltando instalación de paquetes cargo."
+            printf "\n%b\n" "${BLD}${CYE}Para instalar Rust manualmente:${CNC}"
+            printf "%b\n" "  ${BLD}${CGR}Opción 1 (recomendado en Arch):${CNC} sudo pacman -S rust"
+            printf "%b\n" "  ${BLD}${CGR}Opción 2:${CNC} curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"
+            printf "\n%b\n" "${BLD}${CYE}Continuando con otros extras...${CNC}\n"
+            return 0
+        fi
+    else
+        # Cargo is available, but ensure PATH includes cargo bin directory
+        export PATH="$HOME/.cargo/bin:$PATH"
+    fi
+    
+    printf "\n%b\n" "${BLD}${CYE}[--extras] Instalando herramientas Rust...${CNC}"
+    printf "%b\n\n" "${BLD}${CBL}Verificando paquetes cargo...${CNC}"
+    sleep 2
+    
+    # Detect missing (check both PATH and direct cargo bin directory)
+    local missing_cargo=""
+    for pkg in $cargo_packages; do
+        # Algunos paquetes tienen nombres diferentes en cargo vs binario
+        local bin_name="$pkg"
+        [[ $pkg == "bob-nvim" ]] && bin_name="bob"
+        [[ $pkg == "tree-sitter-cli" ]] && bin_name="tree-sitter"
+        
+        # Check if binary exists in PATH or directly in cargo bin directory
+        if command -v "$bin_name" >/dev/null 2>&1 || [ -f "$HOME/.cargo/bin/$bin_name" ]; then
+            printf "%b\n" "${BLD}${CGR}$pkg ${CBL}ya está instalado${CNC}"
+        else
+            missing_cargo="$missing_cargo $pkg"
+            printf "%b\n" " ${BLD}${CYE}$pkg ${CRE}no instalado${CNC}"
+        fi
+    done
+    
+    # Instalación de paquetes cargo faltantes
+    if [ -n "$(printf "%s" "$missing_cargo" | tr -s ' ')" ]; then
+        local count
+        count=$(printf "%s" "$missing_cargo" | wc -w)
+        printf "\n%b\n\n" "${BLD}${CYE}Instalando $count paquetes cargo, por favor espera...${CNC}"
+        
+        local cargo_failed=""
+        for pkg in $missing_cargo; do
+            printf "%b\n" "${BLD}${CBL}Instalando: ${pkg}${CNC}"
+            
+            if cargo install "$pkg" >> "$ERROR_LOG" 2>&1; then
+                # Determine binary name for verification
+                local bin_name="$pkg"
+                [[ $pkg == "bob-nvim" ]] && bin_name="bob"
+                [[ $pkg == "tree-sitter-cli" ]] && bin_name="tree-sitter"
+                
+                # Verify installation by checking if binary exists
+                if [ -f "$HOME/.cargo/bin/$bin_name" ] || command -v "$bin_name" >/dev/null 2>&1; then
+                    printf "%b\n" "  ${BLD}${CGR}Se ha instalado correctamente!${CNC}"
+                else
+                    warn "Paquete instalado pero binario no encontrado: $bin_name"
+                    printf "%b\n" "  ${BLD}${CYE}Instalado pero verifica manualmente${CNC}"
+                fi
+            else
+                log_error "Error al instalar el paquete cargo: $pkg"
+                cargo_failed="$cargo_failed $pkg"
+                printf "%b\n" "  ${BLD}${CRE}Error al instalar${CNC}"
+            fi
+            sleep 0.5
+        done
+        
+        # Mostrar resultados finales
+        if [ -n "$(printf "%s" "$cargo_failed" | tr -s ' ')" ]; then
+            local fail_count
+            fail_count=$(printf "%s" "$cargo_failed" | wc -w)
+            printf "%b\n" "\n${BLD}${CRE}Error al instalar $fail_count/$count paquetes cargo:${CNC}"
+            printf "%b\n\n" "${BLD}${CYE}$(printf "%s" "$cargo_failed")${CNC}"
+        else
+            printf "\n%b\n\n" "${BLD}${CGR}Todos los paquetes cargo se han instalado correctamente!${CNC}"
+        fi
+    else
+        printf "\n%b\n\n" "${BLD}${CGR}Todos los paquetes cargo ya están instalados!${CNC}"
+    fi
+    
+    sleep 3
+}
+
+[[ "${BASH_SOURCE[0]}" == "${0}" ]] && main "$@"
+

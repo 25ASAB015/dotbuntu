@@ -1,0 +1,171 @@
+#!/usr/bin/env bash
+# shellcheck shell=bash
+# shfmt: -ln=bash
+#
+# faur - Install dependencies from AUR (Arch User Repository)
+#
+# Installs packages from AUR using paru. Always installs dotbare.
+# If --extras flag is set, also installs additional AUR packages from config or defaults.
+#
+# @params
+# Globals:
+#   ${INSTALL_EXTRAS}: Flag for extra packages
+#   ${SETUP_CONFIG}: Path to setup configuration
+#   ${DEFAULT_EXTRA_AUR_APPS}: Default extra AUR packages
+#   ${ERROR_LOG}: Path to error log file
+# Arguments:
+#   -h|--help: Show help message and exit
+# Returns:
+#   0 on success
+#   1 on failure
+
+set -Eeuo pipefail
+
+# Determine script directory
+readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly mydir="$SCRIPT_DIR"
+readonly HELPER_DIR="${SCRIPT_DIR}/../../helper"
+
+# Source required helpers
+# shellcheck source=/dev/null
+source "${HELPER_DIR}/load_helpers.sh"
+load_helpers "${HELPER_DIR}" set_variable colors logger prompts checks
+
+# Setup error trap
+trap on_error ERR
+
+#######################################
+# Display usage information
+#######################################
+function usage() {
+  echo -e "Usage: faur [-h]
+
+Install packages from AUR (Arch User Repository) using paru.
+Always installs dotbare. With --extras flag, installs additional AUR packages.
+
+Default packages:
+  dotbare (dotfiles manager)
+
+Optional arguments:
+  -h, --help\t\tshow this help message and exit."
+}
+
+#######################################
+# Main function - install AUR dependencies
+#######################################
+function main() {
+    if [[ "${1:-}" == "-h" ]] || [[ "${1:-}" == "--help" ]]; then
+        usage
+        exit 0
+    fi
+    
+    clear 2>/dev/null || true
+    logo "Instalando las dependencias necesarias desde AUR..."
+    sleep 2
+    
+    # Build AUR package list
+    local aur_apps="dotbare"
+    
+    # Add extra AUR packages if --extras flag is set
+    if [ "${INSTALL_EXTRAS:-0}" -eq 1 ]; then
+        local extra_aur=""
+        if [ -f "$SETUP_CONFIG" ]; then
+            # shellcheck source=/dev/null
+            source "$SETUP_CONFIG"
+            extra_aur="${EXTRA_AUR_APPS[*]:-$DEFAULT_EXTRA_AUR_APPS}"
+        else
+            extra_aur="$DEFAULT_EXTRA_AUR_APPS"
+        fi
+        
+        aur_apps="$aur_apps $extra_aur"
+        printf "\n%b\n" "${BLD}${CYE}[--extras] Incluyendo paquetes adicionales opcionales desde AUR${CNC}"
+    fi
+    
+    printf "%b\n\n" "${BLD}${CBL}Verificando las dependencias necesarias...${CNC}"
+    sleep 2
+    
+    # Detect missing AUR packages
+    local missing_aur=""
+    for pkg in $aur_apps; do
+        if ! is_installed "$pkg"; then
+            missing_aur="$missing_aur $pkg"
+            printf "%b\n" " ${BLD}${CYE}$pkg ${CRE}no instalado${CNC}"
+        else
+            printf "%b\n" "${BLD}${CGR}$pkg ${CBL}ya está instalado${CNC}"
+        fi
+    done
+    
+    # Install missing AUR packages (one by one for better error handling)
+    if [ -n "$(printf "%s" "$missing_aur" | tr -s ' ')" ]; then
+        local count
+        count=$(printf "%s" "$missing_aur" | wc -w)
+        printf "\n%b\n\n" "${BLD}${CYE}Instalando $count paquetes AUR, por favor espera...${CNC}"
+        
+        local aur_failed=""
+        for pkg in $missing_aur; do
+            printf "%b\n" "${BLD}${CBL}Processing: ${pkg}${CNC}"
+            
+            # Try paru first (normal method)
+            if paru -S --skipreview --noconfirm "$pkg" >>"$ERROR_LOG" 2>&1; then
+                printf "%b\n" "  ${BLD}${CGR}Se ha instalado correctamente!${CNC}"
+            else
+                # Fallback: Install directly from GitHub AUR mirror when AUR is down
+                warn "AUR puede estar caído. Intentando instalación desde GitHub..."
+                printf "%b\n" "  ${BLD}${CYE}Clonando desde GitHub AUR mirror...${CNC}"
+                
+                local temp_dir
+                temp_dir=$(mktemp -d)
+                local install_success=0
+                local original_dir
+                original_dir="$PWD"
+                
+                # Clone from GitHub AUR mirror (each package has its own branch)
+                # The repository is cloned to a directory called "aur"
+                if cd "$temp_dir" && git clone --branch "$pkg" --single-branch https://github.com/archlinux/aur.git >>"$ERROR_LOG" 2>&1; then
+                    cd aur || exit 1
+                    # Build and install with makepkg
+                    if makepkg -si --noconfirm >>"$ERROR_LOG" 2>&1; then
+                        printf "%b\n" "  ${BLD}${CGR}Instalado correctamente desde GitHub!${CNC}"
+                        install_success=1
+                    else
+                        log_error "Error al compilar el paquete desde GitHub: $pkg"
+                    fi
+                    cd "$original_dir" || true
+                else
+                    log_error "Error al clonar el paquete desde GitHub: $pkg"
+                    cd "$original_dir" || true
+                fi
+                
+                # Cleanup temp directory
+                rm -rf "$temp_dir" 2>/dev/null || true
+                
+                if [ $install_success -eq 0 ]; then
+                    log_error "Error al instalar el paquete AUR: $pkg (intentó paru y GitHub)"
+                    aur_failed="$aur_failed $pkg"
+                    printf "%b\n" "  ${BLD}${CRE}Error al instalar${CNC}"
+                fi
+            fi
+            sleep 0.5
+        done
+        
+        # Show final results
+        if [ -n "$(printf "%s" "$aur_failed" | tr -s ' ')" ]; then
+            local fail_count
+            fail_count=$(printf "%s" "$aur_failed" | wc -w)
+            printf "%b\n" "\n${BLD}${CRE}Error al instalar $fail_count/$count paquetes AUR:${CNC}"
+            printf "%b\n\n" "${BLD}${CYE}$(printf "%s" "$aur_failed")${CNC}"
+        else
+            printf "\n%b\n\n" "${BLD}${CGR}Todos los paquetes AUR se han instalado correctamente!${CNC}"
+        fi
+    else
+        printf "\n%b\n\n" "${BLD}${CGR}Todas las dependencias AUR ya están instaladas!${CNC}"
+    fi
+    
+    sleep 3
+}
+
+# Execute only if invoked directly
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    main "$@"
+fi
+

@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+# shellcheck shell=bash
+# shfmt: -ln=bash
+#
+# fupdate - System update script for dotmarchy
+#
+# Updates the system using pacman -Syu. This is always executed as the first
+# core operation to ensure the system is up-to-date before installing packages.
+#
+# @params
+# Globals:
+#   None specific to this script
+# Arguments:
+#   -h|--help: Show help message and exit
+# Returns:
+#   0 on success
+#   1 on failure
+
+set -Eeuo pipefail
+
+# Determine script directory
+readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly mydir="$SCRIPT_DIR"
+readonly HELPER_DIR="${SCRIPT_DIR}/../../helper"
+
+# Source required helpers
+# shellcheck source=/dev/null
+source "${HELPER_DIR}/load_helpers.sh"
+load_helpers "${HELPER_DIR}" colors logger prompts utils
+
+# Setup error trap
+trap on_error ERR
+
+#######################################
+# Display usage information
+# Outputs:
+#   Help text for fupdate
+#######################################
+function usage() {
+  echo -e "Usage: fupdate [-h]
+
+Update system packages using pacman -Syu.
+This ensures the system is up-to-date before installing additional packages.
+
+Optional arguments:
+  -h, --help\t\tshow this help message and exit."
+}
+
+#######################################
+# Main function - update system
+# Performs full system update with pacman
+#######################################
+function main() {
+    # Parse arguments
+    if [[ "${1:-}" == "-h" ]] || [[ "${1:-}" == "--help" ]]; then
+        usage
+        exit 0
+    fi
+    
+    clear 2>/dev/null || true
+    logo "Actualizando el sistema"
+    sleep 1
+    
+    info "Actualizando sistema con pacman -Syu..."
+    echo ""
+    
+    # Run system update
+    if sudo pacman -Syu --noconfirm; then
+        echo ""
+        printf "%b\n" "${BLD}${CGR}✓ Sistema actualizado correctamente!${CNC}"
+    else
+        log_error "Error al actualizar el sistema"
+        return 1
+    fi
+    
+    sleep 2
+}
+
+# Execute only if invoked directly
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    main "$@"
+fi
+

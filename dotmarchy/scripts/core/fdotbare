@@ -1,0 +1,688 @@
+#!/usr/bin/env bash
+# shellcheck shell=bash
+# shfmt: -ln=bash
+#
+# fdotbare - Configure dotbare for dotfiles management
+#
+# Ensures dotbare is available and configures it with the user's dotfiles repository.
+# Handles SSH/HTTPS fallback and checks for existing configurations.
+#
+# @params
+# Globals:
+#   DOTBARE_DIR: Location of bare repository
+#   DOTBARE_TREE: Working tree location
+#   REPO_URL: Dotfiles repository URL
+#   FORCE: Force flag for overwriting existing config
+#   ERROR_LOG: Path to error log file
+# Arguments:
+#   -h|--help: Show help message and exit
+# Returns:
+#   0 on success
+#   1 on failure
+
+set -Eeuo pipefail
+
+#######################################
+# Constants and Configuration
+#######################################
+readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly DOTBARE_CLONE_URL="https://github.com/kazhala/dotbare.git"
+readonly DOTBARE_INSTALL_DIR="$HOME/.dotbare"
+readonly DEFAULT_BRANCH="master"
+readonly HELPER_DIR="${SCRIPT_DIR}/../../helper"
+
+#######################################
+# Load Dependencies
+#######################################
+# shellcheck source=/dev/null
+source "${HELPER_DIR}/load_helpers.sh"
+load_helpers "${HELPER_DIR}" set_variable colors logger prompts utils
+
+trap on_error ERR
+
+#######################################
+# Display usage information
+#######################################
+usage() {
+  cat << EOF
+Usage: fdotbare [OPTIONS]
+
+Configure dotbare to manage dotfiles using a git bare repository.
+Ensures dotbare is available and initializes it with your dotfiles repository.
+
+Configuration:
+  DOTBARE_DIR:  ${DOTBARE_DIR:-Not set}
+  DOTBARE_TREE: ${DOTBARE_TREE:-Not set}
+  REPO_URL:     ${REPO_URL:-Not set}
+
+Options:
+  -h, --help     Show this help message and exit
+  --force        Force overwrite of existing configuration
+
+Examples:
+  fdotbare                    # Configure with default settings
+  FORCE=1 fdotbare            # Force reconfiguration
+  fdotbare --help             # Show this help
+EOF
+}
+
+#######################################
+# Check if dotbare command is available
+# Returns:
+#   0 if available, 1 otherwise
+#######################################
+is_dotbare_installed() {
+    command -v dotbare >/dev/null 2>&1
+}
+
+#######################################
+# Clone dotbare repository from GitHub
+# Returns:
+#   0 on success, 1 on failure
+#######################################
+clone_dotbare_repo() {
+    [ -d "$DOTBARE_INSTALL_DIR" ] && return 0
+    
+    info "Installing dotbare from GitHub..."
+    
+    if ! git clone "$DOTBARE_CLONE_URL" "$DOTBARE_INSTALL_DIR" >>"$ERROR_LOG" 2>&1; then
+        log_error "Failed to clone dotbare repository"
+        return 1
+    fi
+    
+    return 0
+}
+
+#######################################
+# Load dotbare plugin for current shell
+#######################################
+load_dotbare_plugin() {
+    local plugin=""
+    
+    if [ -n "${ZSH_VERSION:-}" ] && [ -f "$DOTBARE_INSTALL_DIR/dotbare.plugin.zsh" ]; then
+        plugin="$DOTBARE_INSTALL_DIR/dotbare.plugin.zsh"
+    elif [ -f "$DOTBARE_INSTALL_DIR/dotbare.plugin.bash" ]; then
+        plugin="$DOTBARE_INSTALL_DIR/dotbare.plugin.bash"
+    fi
+    
+    if [ -n "$plugin" ]; then
+        # shellcheck disable=SC1090
+        source "$plugin"
+    fi
+}
+
+#######################################
+# Verify dotbare installation succeeded
+# Returns:
+#   0 if available, 1 otherwise
+#######################################
+verify_dotbare_installation() {
+    if is_dotbare_installed; then
+        info "dotbare is now available"
+        return 0
+    fi
+    
+    warn "dotbare installation failed. Please install manually."
+    return 1
+}
+
+#######################################
+# Ensure dotbare command is available
+# Installs dotbare if not already present
+# Returns:
+#   0 if available, 1 otherwise
+#######################################
+ensure_dotbare_available() {
+    is_dotbare_installed && return 0
+    
+    clone_dotbare_repo || return 1
+    load_dotbare_plugin
+    verify_dotbare_installation
+}
+
+#######################################
+# Check if directory is a bare repository
+# Arguments:
+#   $1: Directory path
+# Returns:
+#   0 if bare repository, 1 otherwise
+#######################################
+is_bare_repository() {
+    local dir="$1"
+    git --git-dir="$dir" rev-parse --is-bare-repository >/dev/null 2>&1
+}
+
+#######################################
+# Get current remote URL from repository
+# Arguments:
+#   $1: Repository directory
+# Outputs:
+#   Remote URL or empty string
+#######################################
+get_remote_url() {
+    local dir="$1"
+    git --git-dir="$dir" remote get-url origin 2>/dev/null || echo ""
+}
+
+#######################################
+# Check if two repository URLs are equivalent
+# Arguments:
+#   $1: First URL
+#   $2: Second URL
+# Returns:
+#   0 if equivalent, 1 otherwise
+#######################################
+are_urls_equivalent() {
+    local url1="$1"
+    local url2="$2"
+    local normalized1 normalized2
+    
+    normalized1=$(normalize_repo_url "$url1")
+    normalized2=$(normalize_repo_url "$url2")
+    
+    [ "$normalized1" = "$normalized2" ]
+}
+
+#######################################
+# Check if we should canonicalize GitHub SSH URL
+# (e.g., only case differs: 25asab015 vs 25ASAB015)
+# Arguments:
+#   $1: Current URL
+#   $2: Target URL
+# Returns:
+#   0 if canonicalization should be applied, 1 otherwise
+#######################################
+needs_github_ssh_canonicalization() {
+    local current="$1"
+    local target="$2"
+
+    [[ $current =~ ^git@github\.com: ]] || return 1
+    [[ $target =~ ^git@github\.com: ]] || return 1
+
+    # Compare repo path case-insensitively, but require string inequality
+    local current_path="${current#git@github.com:}"
+    local target_path="${target#git@github.com:}"
+
+    [ "${current_path,,}" = "${target_path,,}" ] || return 1
+    [ "$current" != "$target" ] || return 1
+
+    return 0
+}
+
+#######################################
+# Update repository remote URL
+# Arguments:
+#   $1: New URL
+# Returns:
+#   0 on success, 1 on failure
+#######################################
+update_remote_url() {
+    local new_url="$1"
+    
+    if git --git-dir="$DOTBARE_DIR" remote set-url origin "$new_url" 2>>"$ERROR_LOG"; then
+        printf "%b\n" "${BLD}${CGR}Remote URL updated successfully${CNC}"
+        return 0
+    fi
+    
+    log_error "Failed to update remote URL"
+    printf "%b\n" "${BLD}${CRE}Failed to update remote URL${CNC}"
+    return 1
+}
+
+#######################################
+# Handle different remote URL
+# Arguments:
+#   $1: Current URL
+#   $2: Target URL
+# Returns:
+#   0 on success, 1 on failure
+#######################################
+handle_different_remote() {
+    local current="$1"
+    local target="$2"
+    
+    if [ "${FORCE:-0}" -eq 1 ]; then
+        printf "%b\n" "${BLD}${CYE}Different remote detected (${CBL}${current}${CYE})"
+        printf "%b\n" "Replacing with ${CBL}${target}${CYE} (--force enabled)${CNC}"
+        update_remote_url "$target"
+        return $?
+    fi
+    
+    printf "%b\n" "${BLD}${CYE}Different remote detected (${CBL}${current}${CYE})"
+    printf "%b\n" "Keeping existing remote. Use --force to change it.${CNC}"
+    return 0
+}
+
+#######################################
+# Validate and update remote if needed
+# Returns:
+#   0 on success, 1 on failure
+#######################################
+validate_remote_url() {
+    local current_url
+    current_url=$(get_remote_url "$DOTBARE_DIR")
+    
+    [ -z "$current_url" ] && return 0
+    
+    if are_urls_equivalent "$current_url" "$REPO_URL"; then
+        if needs_github_ssh_canonicalization "$current_url" "$REPO_URL"; then
+            printf "%b\n" "${BLD}${CYE}Remote URL is equivalent but not canonical; updating...${CNC}"
+            update_remote_url "$REPO_URL"
+            return $?
+        fi
+        printf "%b\n" "${BLD}${CGR}Remote URL is correct${CNC}"
+        return 0
+    fi
+    
+    handle_different_remote "$current_url" "$REPO_URL"
+}
+
+#######################################
+# Create backup of directory
+# Arguments:
+#   $1: Directory to backup
+# Returns:
+#   0 on success, 1 on failure
+#######################################
+create_backup() {
+    local dir="$1"
+    local backup="${dir}.bak_$(date +%s)"
+    
+    if mv "$dir" "$backup" 2>>"$ERROR_LOG"; then
+        printf "%b\n" "${BLD}${CGR}Backup created: ${CBL}${backup}${CNC}"
+        return 0
+    fi
+    
+    log_error "Failed to create backup of: $dir"
+    printf "%b\n" "${BLD}${CRE}Failed to create backup${CNC}"
+    return 1
+}
+
+#######################################
+# Handle invalid repository directory
+# Returns:
+#   0 on success, 1 on failure
+#######################################
+handle_invalid_repository() {
+    printf "%b\n" "${BLD}${CRE}${DOTBARE_DIR} exists but is not a bare repository${CNC}"
+    
+    if [ "${FORCE:-0}" -ne 1 ]; then
+        printf "%b\n" "${BLD}${CYE}Use --force to backup and continue${CNC}"
+        return 1
+    fi
+    
+    printf "%b\n" "${BLD}${CYE}Moving conflicting directory to backup...${CNC}"
+    create_backup "$DOTBARE_DIR"
+}
+
+#######################################
+# Validate existing repository setup
+# Returns:
+#   0 if valid and configured, 1 if needs initialization
+#######################################
+validate_existing_repository() {
+    [ ! -d "$DOTBARE_DIR" ] && return 1
+    
+    if ! is_bare_repository "$DOTBARE_DIR"; then
+        handle_invalid_repository || exit 1
+        return 1
+    fi
+    
+    validate_remote_url
+    printf "%b\n" "${BLD}${CGR}dotbare already initialized${CNC}"
+    return 0
+}
+
+#######################################
+# Check if SSH authentication is available
+# Returns:
+#   0 if available, 1 otherwise
+#######################################
+is_ssh_available() {
+    check_ssh_auth
+}
+
+#######################################
+# Determine optimal repository URL (SSH or HTTPS)
+# Outputs:
+#   Selected URL
+#######################################
+select_repository_url() {
+    local url="$REPO_URL"
+    
+    # If not SSH URL, use as-is
+    if [[ ! $url =~ ^git@ ]]; then
+        echo "$url"
+        return 0
+    fi
+    
+    # Try SSH first
+    if is_ssh_available; then
+        printf "%b\n" "${BLD}${CGR}Using SSH authentication${CNC}"
+        echo "$url"
+        return 0
+    fi
+    
+    # Fallback to HTTPS
+    local https_url
+    https_url=$(ssh_to_https "$url")
+    printf "%b\n" "${BLD}${CYE}SSH unavailable. Using HTTPS: ${CBL}${https_url}${CNC}"
+    echo "$https_url"
+}
+
+#######################################
+# Initialize dotbare with repository
+# Arguments:
+#   $1: Repository URL
+# Returns:
+#   0 on success, 1 on failure
+#######################################
+initialize_with_url() {
+    local url="$1"
+    
+    if dotbare finit -u "$url" 2>>"$ERROR_LOG"; then
+        printf "%b\n" "${BLD}${CGR}dotbare initialized successfully${CNC}"
+        return 0
+    fi
+    
+    return 1
+}
+
+#######################################
+# Attempt HTTPS fallback for initialization
+# Returns:
+#   0 on success, 1 on failure
+# Outputs:
+#   Final URL used
+#######################################
+attempt_https_fallback() {
+    [[ ! $REPO_URL =~ ^git@ ]] && return 1
+    
+    local https_url
+    https_url=$(ssh_to_https "$REPO_URL")
+    
+    printf "%b\n" "${BLD}${CYE}SSH failed. Retrying with HTTPS: ${CBL}${https_url}${CNC}"
+    
+    if initialize_with_url "$https_url"; then
+        echo "$https_url"
+        return 0
+    fi
+    
+    return 1
+}
+
+#######################################
+# Initialize dotbare repository with fallback
+# Returns:
+#   0 on success, 1 on failure
+# Outputs:
+#   Final URL used
+#######################################
+initialize_dotbare_repository() {
+    printf "%b\n" "${BLD}${CBL}Initializing dotbare with your repository...${CNC}"
+    
+    local url final_url
+    url=$(select_repository_url)
+    
+    if initialize_with_url "$url"; then
+        echo "$url"
+        return 0
+    fi
+    
+    # Try HTTPS fallback
+    if final_url=$(attempt_https_fallback); then
+        echo "$final_url"
+        return 0
+    fi
+    
+    log_error "Failed to initialize dotbare (tried SSH and HTTPS)"
+    printf "%b\n" "${BLD}${CRE}Failed to initialize dotbare${CNC}"
+    printf "%b\n" "${BLD}${CYE}Verify the repository exists and is accessible${CNC}"
+    return 1
+}
+
+#######################################
+# Configure fetch refspec for remote
+# Returns:
+#   0 on success, 1 on failure
+#######################################
+configure_fetch_refspec() {
+    # Check if refspec already exists
+    if git --git-dir="$DOTBARE_DIR" config --get-all "remote.origin.fetch" >/dev/null 2>&1; then
+        return 0
+    fi
+    
+    if git --git-dir="$DOTBARE_DIR" config --add "remote.origin.fetch" \
+        "+refs/heads/*:refs/remotes/origin/*" >>"$ERROR_LOG" 2>&1; then
+        printf "%b\n" "${BLD}${CGR}Fetch refspec configured for origin${CNC}"
+        return 0
+    fi
+    
+    warn "Failed to configure fetch refspec"
+    return 1
+}
+
+#######################################
+# Fetch remote references from origin
+# Returns:
+#   0 on success, 1 on failure
+#######################################
+fetch_remote_references() {
+    if git --git-dir="$DOTBARE_DIR" fetch --prune origin >>"$ERROR_LOG" 2>&1; then
+        return 0
+    fi
+    
+    warn "Failed to fetch from origin. Check connection/SSH."
+    return 1
+}
+
+#######################################
+# Check if local branch exists
+# Arguments:
+#   $1: Branch name
+# Returns:
+#   0 if exists, 1 otherwise
+#######################################
+local_branch_exists() {
+    local branch="$1"
+    git --git-dir="$DOTBARE_DIR" show-ref --verify --quiet "refs/heads/${branch}"
+}
+
+#######################################
+# Check if remote branch exists
+# Arguments:
+#   $1: Remote branch reference (e.g., origin/master)
+# Returns:
+#   0 if exists, 1 otherwise
+#######################################
+remote_branch_exists() {
+    local remote_ref="$1"
+    git --git-dir="$DOTBARE_DIR" show-ref --verify --quiet "refs/remotes/${remote_ref}"
+}
+
+#######################################
+# Check if branch has upstream configured
+# Arguments:
+#   $1: Branch name
+# Returns:
+#   0 if has upstream, 1 otherwise
+#######################################
+has_upstream() {
+    local branch="$1"
+    git --git-dir="$DOTBARE_DIR" rev-parse --abbrev-ref "${branch}@{upstream}" >/dev/null 2>&1
+}
+
+#######################################
+# Set upstream for existing branch
+# Arguments:
+#   $1: Branch name
+#   $2: Upstream reference
+# Returns:
+#   0 on success, 1 on failure
+#######################################
+set_branch_upstream() {
+    local branch="$1"
+    local upstream="$2"
+    
+    if git --git-dir="$DOTBARE_DIR" branch --set-upstream-to="$upstream" "$branch" >>"$ERROR_LOG" 2>&1; then
+        printf "%b\n" "${BLD}${CGR}Upstream configured: ${CBL}${branch}${CGR} → ${CBL}${upstream}${CNC}"
+        return 0
+    fi
+    
+    warn "Failed to set upstream for ${branch}"
+    return 1
+}
+
+#######################################
+# Create local branch tracking remote
+# Arguments:
+#   $1: Branch name
+#   $2: Remote reference to track
+# Returns:
+#   0 on success, 1 on failure
+#######################################
+create_tracking_branch() {
+    local branch="$1"
+    local upstream="$2"
+    
+    if GIT_DIR="$DOTBARE_DIR" GIT_WORK_TREE="$DOTBARE_TREE" \
+        git checkout -b "$branch" --track "$upstream" >>"$ERROR_LOG" 2>&1; then
+        printf "%b\n" "${BLD}${CGR}Branch created with tracking: ${CBL}${branch}${CGR} → ${CBL}${upstream}${CNC}"
+        return 0
+    fi
+    
+    warn "Failed to create tracking branch ${branch}"
+    return 1
+}
+
+#######################################
+# Configure upstream for existing branch
+# Arguments:
+#   $1: Branch name
+#   $2: Remote reference
+#######################################
+configure_existing_branch_upstream() {
+    local branch="$1"
+    local upstream="$2"
+    
+    has_upstream "$branch" && return 0
+    
+    if ! remote_branch_exists "$upstream"; then
+        warn "Remote branch ${upstream} does not exist"
+        return 0
+    fi
+    
+    set_branch_upstream "$branch" "$upstream"
+}
+
+#######################################
+# Create and configure new tracking branch
+# Arguments:
+#   $1: Branch name
+#   $2: Remote reference
+#######################################
+configure_new_tracking_branch() {
+    local branch="$1"
+    local upstream="$2"
+    
+    if ! remote_branch_exists "$upstream"; then
+        warn "Remote branch ${upstream} does not exist"
+        return 0
+    fi
+    
+    create_tracking_branch "$branch" "$upstream"
+}
+
+#######################################
+# Configure branch tracking for default branch
+# Returns:
+#   0 on success
+#######################################
+configure_branch_tracking() {
+    local branch="$DEFAULT_BRANCH"
+    local upstream="origin/${branch}"
+    
+    configure_fetch_refspec
+    fetch_remote_references
+    
+    if local_branch_exists "$branch"; then
+        configure_existing_branch_upstream "$branch" "$upstream"
+    else
+        configure_new_tracking_branch "$branch" "$upstream"
+    fi
+}
+
+#######################################
+# Setup environment variables
+#######################################
+setup_environment() {
+    DOTBARE_DIR="${DOTBARE_DIR:-$DOTBARE_DIR_DEFAULT}"
+    DOTBARE_TREE="${DOTBARE_TREE:-$DOTBARE_TREE_DEFAULT}"
+    export DOTBARE_DIR DOTBARE_TREE
+}
+
+#######################################
+# Display success message
+# Arguments:
+#   $1: Final repository URL used
+#######################################
+display_success() {
+    local url="${1:-$REPO_URL}"
+    printf "%b\n" "${BLD}${CGR}dotbare ready!${CNC}"
+    printf "%b\n" "${BLD}${CGR}Repository: ${CBL}${DOTBARE_DIR}${CNC}"
+    printf "%b\n" "${BLD}${CGR}Remote: ${CBL}${url}${CNC}"
+    sleep 2
+}
+
+#######################################
+# Main configuration function
+#######################################
+configure_dotbare() {
+    clear 2>/dev/null || true
+    logo "Configuring dotbare"
+    sleep 1
+    
+    printf "%b\n" "${BLD}${CBL}Preparing dotbare to manage your dotfiles...${CNC}"
+    sleep 1
+    
+    require_cmd dotbare
+    setup_environment
+    
+    # Check if already configured
+    if validate_existing_repository; then
+        configure_branch_tracking
+        display_success
+        return 0
+    fi
+    
+    # Initialize new repository
+    local final_url
+    if ! final_url=$(initialize_dotbare_repository); then
+        return 1
+    fi
+    
+    configure_branch_tracking
+    display_success "$final_url"
+}
+
+#######################################
+# Main entry point
+#######################################
+main() {
+    if [[ "${1:-}" =~ ^(-h|--help)$ ]]; then
+        usage
+        exit 0
+    fi
+    
+    if ! ensure_dotbare_available; then
+        log_error "Could not make dotbare available"
+        return 1
+    fi
+    
+    configure_dotbare
+}
+
+# Execute only if invoked directly
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    main "$@"
+fi

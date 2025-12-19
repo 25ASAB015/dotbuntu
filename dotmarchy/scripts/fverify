@@ -1,0 +1,171 @@
+#!/usr/bin/env bash
+# shellcheck shell=bash
+# shfmt: -ln=bash
+#
+# fverify - Verify installation of all tools
+#
+# Comprehensive verification script that checks installed tools, PATH configuration,
+# and displays installation statistics.
+
+set -Eeuo pipefail
+
+readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly mydir="$SCRIPT_DIR"
+readonly HELPER_DIR="${SCRIPT_DIR}/../helper"
+
+# Source required helpers
+# shellcheck source=/dev/null
+source "${HELPER_DIR}/load_helpers.sh"
+load_helpers "${HELPER_DIR}" set_variable colors logger prompts
+trap on_error ERR
+
+# Verification counters
+SUCCESS_COUNT=0
+FAIL_COUNT=0
+WARNING_COUNT=0
+declare -a FAILED_TOOLS=()
+declare -a WARNING_TOOLS=()
+
+function usage() {
+  echo "Usage: fverify [-h]
+
+Verify installed tools and configuration.
+Can be run standalone with: dotmarchy --verify
+
+Optional arguments:
+  -h, --help\t\tshow this help message"
+}
+
+function check_tool() {
+    local cmd="$1"
+    local name="$2"
+    local optional="${3:-false}"
+    
+    if command -v "$cmd" >/dev/null 2>&1; then
+        local version=""
+        case "$cmd" in
+            tsserver)
+                command -v tsc >/dev/null 2>&1 && version=$(tsc --version 2>&1) || version="Instalado (typescript)"
+                ;;
+            yaml-language-server|bash-language-server|vim-language-server)
+                version=$(timeout 2 "$cmd" --version 2>&1 | head -1 || echo "Instalado")
+                ;;
+            *)
+                version=$(timeout 2 "$cmd" --version 2>&1 | head -1 || echo "")
+                ;;
+        esac
+        
+        printf "%b\n" "${CGR}✓${CNC} ${BLD}$name${CNC}"
+        [ -n "$version" ] && printf "%b\n" "  ${CBL}→${CNC} $version"
+        : $((SUCCESS_COUNT++))
+        return 0
+    else
+        if [ "$optional" = "true" ]; then
+            printf "%b\n" "${CYE}⚠${CNC} ${BLD}$name${CNC} - ${CYE}No instalado (opcional)${CNC}"
+            WARNING_TOOLS+=("$name")
+            : $((WARNING_COUNT++))
+        else
+            printf "%b\n" "${CRE}✗${CNC} ${BLD}$name${CNC} - ${CRE}No encontrado${CNC}"
+            FAILED_TOOLS+=("$name")
+            : $((FAIL_COUNT++))
+        fi
+        return 1
+    fi
+}
+
+function check_path() {
+    local path="$1"
+    local name="$2"
+    
+    if [[ ":$PATH:" == *":$path:"* ]]; then
+        printf "%b\n" "${CGR}✓${CNC} ${BLD}$name${CNC} en PATH"
+        printf "%b\n" "  ${CBL}→${CNC} $path"
+        : $((SUCCESS_COUNT++))
+    else
+        printf "%b\n" "${CRE}✗${CNC} ${BLD}$name${CNC} no en PATH"
+        printf "%b\n" "  ${CYE}→${CNC} Ejecuta: export PATH=\"$path:\$PATH\""
+        FAILED_TOOLS+=("$name (PATH)")
+        : $((FAIL_COUNT++))
+    fi
+}
+
+function main() {
+    [[ "${1:-}" =~ ^(-h|--help)$ ]] && usage && exit 0
+    
+    clear 2>/dev/null || true
+    logo "Verificación de Instalación - dotmarchy"
+    
+    printf "\n%b\n" "${BLD}${CBL}Verificando herramientas instaladas...${CNC}\n"
+    
+    # Reset counters
+    SUCCESS_COUNT=0
+    FAIL_COUNT=0
+    WARNING_COUNT=0
+    FAILED_TOOLS=()
+    WARNING_TOOLS=()
+    
+    # PATH verification
+    printf "\n%b\n" "${BLD}${CGR}━━━ PATH ━━━${CNC}\n"
+    check_path "$HOME/.local/bin" "Local binaries"
+    check_path "$HOME/.cargo/bin" "Cargo (Rust)"
+    command -v ruby >/dev/null 2>&1 && {
+        local ruby_ver=$(ruby -e 'puts RUBY_VERSION' 2>/dev/null || echo "")
+        [ -n "$ruby_ver" ] && check_path "$HOME/.local/share/gem/ruby/$ruby_ver/bin" "Ruby gems"
+    }
+    
+    # Essential tools
+    printf "\n%b\n" "${BLD}${CGR}━━━ Herramientas Esenciales ━━━${CNC}\n"
+    check_tool git "Git"
+    check_tool dotbare "dotbare"
+    check_tool tree "tree"
+    check_tool bat "bat"
+    check_tool diff-so-fancy "diff-so-fancy"
+    check_tool delta "git-delta"
+    
+    # Development tools
+    printf "\n%b\n" "${BLD}${CGR}━━━ Desarrollo ━━━${CNC}\n"
+    check_tool nvim "Neovim" "true"
+    check_tool tmux "tmux" "true"
+    check_tool rg "ripgrep" "true"
+    check_tool fd "fd" "true"
+    check_tool fzf "fzf" "true"
+    
+    # Language tools
+    printf "\n%b\n" "${BLD}${CGR}━━━ Lenguajes ━━━${CNC}\n"
+    check_tool node "Node.js" "true"
+    check_tool npm "npm" "true"
+    check_tool cargo "Rust/Cargo" "true"
+    check_tool python3 "Python3" "true"
+    check_tool pip "pip" "true"
+    check_tool ruby "Ruby" "true"
+    
+    # Display summary
+    local total=$((SUCCESS_COUNT + FAIL_COUNT + WARNING_COUNT))
+    
+    printf "\n%b\n" "${BLD}${CBL}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CNC}"
+    printf "%b\n" "${BLD}${CBL}RESUMEN${CNC}"
+    printf "%b\n" "${BLD}${CBL}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CNC}\n"
+    
+    printf "%b\n" "${CGR}✓ Exitosos:${CNC} ${BLD}$SUCCESS_COUNT${CNC}"
+    printf "%b\n" "${CYE}⚠ Advertencias:${CNC} ${BLD}$WARNING_COUNT${CNC}"
+    printf "%b\n" "${CRE}✗ Fallidos:${CNC} ${BLD}$FAIL_COUNT${CNC}"
+    printf "%b\n" "${CBL}━ Total:${CNC} ${BLD}$total${CNC}\n"
+    
+    if [ "$FAIL_COUNT" -eq 0 ] && [ "$WARNING_COUNT" -eq 0 ]; then
+        printf "%b\n" "${BLD}${CGR}¡Todo instalado correctamente! 🎉${CNC}\n"
+        return 0
+    elif [ "$FAIL_COUNT" -eq 0 ]; then
+        printf "%b\n" "${BLD}${CGR}Instalación completa con advertencias menores${CNC}\n"
+        return 0
+    else
+        printf "%b\n" "${BLD}${CRE}Algunas herramientas faltantes:${CNC}"
+        for tool in "${FAILED_TOOLS[@]}"; do
+            printf "%b\n" "  ${CRE}✗${CNC} $tool"
+        done
+        echo ""
+        return 1
+    fi
+}
+
+[[ "${BASH_SOURCE[0]}" == "${0}" ]] && main "$@"
+
