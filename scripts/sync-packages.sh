@@ -29,7 +29,7 @@ readonly HELPER_DIR="${SCRIPT_DIR}/../helper"
 # Source required helpers
 # shellcheck source=/dev/null
 source "${HELPER_DIR}/load_helpers.sh"
-load_helpers "${HELPER_DIR}" colors logger nix-helpers
+load_helpers "${HELPER_DIR}" colors logger prompts nix-helpers utils
 
 # Error log fallback
 : "${ERROR_LOG:=$HOME/.local/share/dotmarchy/install_errors.log}"
@@ -80,10 +80,67 @@ find_packages_nix() {
 }
 
 #######################################
+# Configure nixpkgs to allow unfree packages
+#
+# Creates or updates ~/.config/nixpkgs/config.nix to allow
+# installation of unfree (proprietary) packages like VS Code,
+# Discord, Chrome, etc.
+#
+# Globals:
+#   HOME - User's home directory
+#
+# Arguments:
+#   None
+#
+# Returns:
+#   0 - Configuration successful
+#   1 - Failed to create configuration
+#
+# Outputs:
+#   STDOUT - Status messages
+#   STDERR - Error messages
+#######################################
+configure_nixpkgs_unfree() {
+    local nixpkgs_config_dir="${HOME}/.config/nixpkgs"
+    local nixpkgs_config_file="${nixpkgs_config_dir}/config.nix"
+    
+    # Check if already configured
+    if [[ -f "$nixpkgs_config_file" ]]; then
+        if grep -q "allowUnfree.*=.*true" "$nixpkgs_config_file" 2>/dev/null; then
+            return 0  # Already configured, silent success
+        fi
+    fi
+    
+    # Create directory if needed
+    if ! mkdir -p "$nixpkgs_config_dir" 2>/dev/null; then
+        echo "ERROR: No se pudo crear ${nixpkgs_config_dir}" >&2
+        return 1
+    fi
+    
+    # Create configuration file
+    cat > "$nixpkgs_config_file" << 'EOF'
+{
+  # Allow unfree (proprietary) packages
+  # This enables installation of packages like VS Code, Discord, Chrome, etc.
+  allowUnfree = true;
+}
+EOF
+    
+    if [[ $? -eq 0 ]]; then
+        info "✓ Configurado nixpkgs para permitir paquetes unfree"
+        return 0
+    else
+        echo "ERROR: No se pudo crear ${nixpkgs_config_file}" >&2
+        return 1
+    fi
+}
+
+#######################################
 # Verify NIX installation and readiness
 #
 # Checks that NIX is installed, available in PATH, and the NIX store
 # is accessible. Automatically sources NIX profile if needed.
+# Configures nixpkgs to allow unfree packages.
 # Provides specific error messages for each failure case.
 #
 # Globals:
@@ -122,6 +179,12 @@ verify_nix_installed() {
         echo "ERROR: nix-env no responde correctamente" >&2
         return 1
     fi
+    
+    # Configure nixpkgs for unfree packages
+    configure_nixpkgs_unfree || {
+        warn "No se pudo configurar nixpkgs para paquetes unfree"
+        warn "Algunos paquetes propietarios pueden fallar"
+    }
     
     return 0
 }

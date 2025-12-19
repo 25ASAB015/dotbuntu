@@ -36,9 +36,23 @@
 set -Eeuo pipefail
 
 # Source dependencies if not already loaded
+# When loaded via load_helpers, dependencies are already sourced
+# Only load them if utils.sh is sourced directly
 if [ -z "${CGR:-}" ]; then
-    HELPER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    # Only set HELPER_DIR if not already defined (it might be readonly from caller)
+    if [ -z "${HELPER_DIR:-}" ]; then
+        HELPER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    fi
+    # shellcheck source=/dev/null
     source "${HELPER_DIR}/colors.sh"
+fi
+
+# Check if logger is loaded (by checking if a logger function exists)
+if ! declare -f info >/dev/null 2>&1; then
+    if [ -z "${HELPER_DIR:-}" ]; then
+        HELPER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    fi
+    # shellcheck source=/dev/null
     source "${HELPER_DIR}/logger.sh"
 fi
 

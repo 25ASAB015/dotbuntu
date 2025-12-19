@@ -432,6 +432,62 @@ enable_flakes() {
 }
 
 #######################################
+# Configure nixpkgs to allow unfree packages
+#
+# Creates or updates ~/.config/nixpkgs/config.nix to allow
+# installation of unfree (proprietary) packages like VS Code,
+# Discord, Chrome, etc.
+#
+# Globals:
+#   HOME - User's home directory
+#
+# Arguments:
+#   None
+#
+# Returns:
+#   0 - Configuration successful or already configured
+#   1 - Configuration failed
+#
+# Outputs:
+#   STDOUT - Status messages
+#######################################
+configure_nixpkgs_unfree() {
+    local nixpkgs_config_dir="${HOME}/.config/nixpkgs"
+    local nixpkgs_config_file="${nixpkgs_config_dir}/config.nix"
+    
+    # Check if already configured
+    if [[ -f "$nixpkgs_config_file" ]] && grep -q "allowUnfree.*=.*true" "$nixpkgs_config_file" 2>/dev/null; then
+        info "Paquetes unfree ya configurados"
+        return 0
+    fi
+    
+    # Create directory if needed
+    if ! mkdir -p "$nixpkgs_config_dir" 2>/dev/null; then
+        error "Falló al crear directorio de configuración nixpkgs"
+        return 1
+    fi
+    
+    info "Configurando nixpkgs para permitir paquetes unfree..."
+    
+    # Create configuration file
+    cat > "$nixpkgs_config_file" << 'EOF'
+{
+  # Allow unfree (proprietary) packages
+  # This enables installation of packages like VS Code, Discord, Chrome, etc.
+  allowUnfree = true;
+}
+EOF
+    
+    if [[ $? -ne 0 ]]; then
+        error "Falló al escribir configuración nixpkgs"
+        return 1
+    fi
+    
+    success "Paquetes unfree habilitados en $nixpkgs_config_file"
+    return 0
+}
+
+#######################################
 # Verify NIX installation completeness
 #
 # Performs comprehensive verification of NIX installation including:
@@ -593,6 +649,10 @@ main() {
     
     if ! enable_flakes; then
         warn "Falló la configuración de flakes (no crítico)"
+    fi
+    
+    if ! configure_nixpkgs_unfree; then
+        warn "Falló la configuración de paquetes unfree (no crítico)"
     fi
     
     if ! verify_installation; then
