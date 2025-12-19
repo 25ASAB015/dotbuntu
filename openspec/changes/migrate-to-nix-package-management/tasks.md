@@ -95,43 +95,43 @@
 ## Phase 3: Transition to NIX Default (Week 3)
 
 ### 3.1 Make NIX Default Method
-- [ ] 3.1.1 Swap default: NIX is default, add `--legacy` flag for old method
-- [ ] 3.1.2 Add deprecation warnings to legacy package installers
-- [ ] 3.1.3 Update `--help` output to promote NIX method
-- [ ] 3.1.4 Show migration guide link when using `--legacy`
+- [x] 3.1.1 Swap default: NIX is default, add `--legacy` flag for old method
+- [x] 3.1.2 Add deprecation warnings to legacy package installers
+- [x] 3.1.3 Update `--help` output to promote NIX method
+- [x] 3.1.4 Show migration guide link when using `--legacy`
 
 ### 3.2 Move Legacy Code
-- [ ] 3.2.1 Create `scripts/legacy/` directory
-- [ ] 3.2.2 Move `fdeps`, `faur`, `fchaotic`, `fchaotic-deps` to legacy/
+- [x] 3.2.1 Create `scripts/legacy/` directory
+- [x] 3.2.2 Move `fdeps`, `faur`, `fchaotic`, `fchaotic-deps` to legacy/
 - [ ] 3.2.3 Move language-specific installers (fnpm, fcargo, etc.) to legacy/
-- [ ] 3.2.4 Keep scripts executable but mark as deprecated in headers
-- [ ] 3.2.5 Update any imports/references to legacy scripts
+- [x] 3.2.4 Keep scripts executable but mark as deprecated in headers
+- [x] 3.2.5 Update any imports/references to legacy scripts
 
 ### 3.3 Simplify Configuration
-- [ ] 3.3.1 Update `config/defaults.sh` - remove package-related vars
-- [ ] 3.3.2 Keep only: DOTBARE_*, REPO_URL, ERROR_LOG, SETUP_CONFIG
-- [ ] 3.3.3 Update `helper/set_variable.sh` similarly
-- [ ] 3.3.4 Add PACKAGES_NIX_PATH variable
+- [x] 3.3.1 Update `config/defaults.sh` - remove package-related vars
+- [x] 3.3.2 Keep only: DOTBARE_*, REPO_URL, ERROR_LOG, SETUP_CONFIG
+- [x] 3.3.3 Update `helper/set_variable.sh` similarly
+- [x] 3.3.4 Add PACKAGES_NIX_PATH variable
 
 ### 3.4 Remove Distribution Detection
-- [ ] 3.4.1 Archive `helper/package_manager.sh` (no longer needed)
-- [ ] 3.4.2 Remove distro detection from checks.sh if present
-- [ ] 3.4.3 Update any code that called package_manager functions
-- [ ] 3.4.4 Verify no broken imports
+- [x] 3.4.1 Archive `helper/package_manager.sh` (no longer needed)
+- [x] 3.4.2 Remove distro detection from checks.sh if present
+- [x] 3.4.3 Update any code that called package_manager functions
+- [x] 3.4.4 Verify no broken imports
 
 ### 3.5 Update Main Documentation
-- [ ] 3.5.1 Rewrite README.md with NIX-first approach
-- [ ] 3.5.2 Update installation instructions
-- [ ] 3.5.3 Update usage examples (show packages.nix workflow)
-- [ ] 3.5.4 Add "Why NIX?" section explaining benefits
-- [ ] 3.5.5 Link to NIX_SETUP.md and MIGRATION.md
+- [x] 3.5.1 Rewrite README.md with NIX-first approach
+- [x] 3.5.2 Update installation instructions
+- [x] 3.5.3 Update usage examples (show packages.nix workflow)
+- [x] 3.5.4 Add \"Why NIX?\" section explaining benefits
+- [x] 3.5.5 Link to NIX_SETUP.md and MIGRATION.md
 
 ### 3.6 Architecture Documentation
-- [ ] 3.6.1 Create `docs/ARCHITECTURE.md`
-- [ ] 3.6.2 Document NIX + dotbare separation of concerns
-- [ ] 3.6.3 Explain package installation flow
-- [ ] 3.6.4 Document configuration file locations
-- [ ] 3.6.5 Add diagrams (ASCII art or mermaid)
+- [x] 3.6.1 Create `docs/ARCHITECTURE.md`
+- [x] 3.6.2 Document NIX + dotbare separation of concerns
+- [x] 3.6.3 Explain package installation flow
+- [x] 3.6.4 Document configuration file locations
+- [x] 3.6.5 Add diagrams (ASCII art or mermaid)
 
 ### 3.7 Testing Phase 3
 - [ ] 3.7.1 Full integration test on Arch (NIX default)
@@ -157,11 +157,11 @@
 - [ ] 4.2.5 Verify logging to ERROR_LOG is complete
 
 ### 4.3 Documentation Polish
-- [ ] 4.3.1 Proofread all documentation (spelling, grammar)
-- [ ] 4.3.2 Add code examples to every doc section
-- [ ] 4.3.3 Create quick start guide (1-page, 5 minutes)
-- [ ] 4.3.4 Update CHANGELOG with all changes
-- [ ] 4.3.5 Create upgrade guide (v1.x → v2.0.0)
+- [x] 4.3.1 Proofread all documentation (spelling, grammar)
+- [x] 4.3.2 Add code examples to every doc section
+- [x] 4.3.3 Create quick start guide (1-page, 5 minutes)
+- [x] 4.3.4 Update CHANGELOG with all changes
+- [x] 4.3.5 Create upgrade guide (v1.x → v2.0.0)
 
 ### 4.4 Demo Materials
 - [ ] 4.4.1 Create animated GIF: fresh install flow
@@ -171,8 +171,8 @@
 - [ ] 4.4.5 Take screenshots for documentation
 
 ### 4.5 Release Preparation
-- [ ] 4.5.1 Update version to 2.0.0 in all files
-- [ ] 4.5.2 Create comprehensive release notes
+- [x] 4.5.1 Update version to 2.0.0 in all files
+- [x] 4.5.2 Create comprehensive release notes
 - [ ] 4.5.3 Tag v2.0.0-rc1 for release candidate testing
 - [ ] 4.5.4 Beta test release candidate for 3-5 days
 - [ ] 4.5.5 Address any critical bugs from RC
