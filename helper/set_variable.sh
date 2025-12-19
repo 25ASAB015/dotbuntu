@@ -51,8 +51,8 @@ else
     export REPO_URL="${REPO_URL:-git@github.com:25ASAB015/dotfiles.git}"
     
     # Configuration paths
-    export SETUP_CONFIG="${SETUP_CONFIG:-$HOME/.config/dotbuntu/setup.conf}"
-    export ERROR_LOG="${ERROR_LOG:-$HOME/.local/share/dotbuntu/install_errors.log}"
+    export SETUP_CONFIG="${SETUP_CONFIG:-$HOME/.config/dotmarchy/setup.conf}"
+    export ERROR_LOG="${ERROR_LOG:-$HOME/.local/share/dotmarchy/install_errors.log}"
     mkdir -p "$(dirname "$ERROR_LOG")" 2>/dev/null || true
     
     # Operational flags
@@ -65,7 +65,8 @@ else
     export VERIFY_MODE="${VERIFY_MODE:-0}"
     
     # Core dependencies
-    export CORE_DEPENDENCIES="zsh tree bat highlight ruby-coderay git-delta diff-so-fancy npm"
+    # Note: git-delta and diff-so-fancy moved to extras (platform-specific)
+    export CORE_DEPENDENCIES="zsh tree bat highlight ruby-coderay npm"
     
     # Installation statistics
     export INSTALL_START_TIME="${INSTALL_START_TIME:-$(date +%s)}"

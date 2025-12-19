@@ -62,8 +62,9 @@ readonly DEFAULT_GEM_COUNT=1      # neovim
 #   $1: Message text to display below logo (optional)
 #######################################
 show_logo() {
-    local text="${1:-}"
-    printf "%b" "
+    local text="${1:-dotmarchy}"
+    # shellcheck disable=SC2059
+    printf "
    ▗▖                              ▗▖        
    ▐▌      ▐▌                      ▐▌        
  ▟█▟▌ ▟█▙ ▐███ ▐█▙█▖ ▟██▖ █▟█▌ ▟██▖▐▙██▖▝█ █▌
@@ -73,7 +74,7 @@ show_logo() {
  ▝▀▝▘ ▝▀▘   ▀▀ ▝▘▀▝▘ ▀▀▝▘ ▀    ▝▀▀ ▝▘ ▝▘  █  
                                          █▌  
 
-   ${BLD}${CRE}[ ${CYE}${text} ${CRE}]${CNC}\n\n"
+   %b%b[ %b%s %b]%b\n\n" "${BLD}" "${CRE}" "${CYE}" "${text}" "${CRE}" "${CNC}"
 }
 
 #######################################
@@ -91,7 +92,7 @@ show_logo() {
 #######################################
 show_welcome() {
     clear_screen
-    show_logo "Bienvenido a dotbuntu, $USER"
+    show_logo "Bienvenido a dotmarchy, $USER"
     show_welcome_intro
     show_basic_operations
     show_extras_section
@@ -336,7 +337,7 @@ ${BLD}${CBL}━━━━━━━━━━━━━━━━━━━━━━�
 }
 
 show_safety_section() {
-    local error_log_path="${ERROR_LOG:-$HOME/.local/share/dotbuntu/install_errors.log}"
+    local error_log_path="${ERROR_LOG:-$HOME/.local/share/dotmarchy/install_errors.log}"
     printf "%b" "${BLD}${CBL}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CNC}
 ${BLD}${CBL}  GARANTÍAS DE SEGURIDAD${CNC}
 ${BLD}${CBL}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CNC}
@@ -394,7 +395,7 @@ ${CNC}\n"
 }
 
 print_operation_summary() {
-    local error_log_path="${ERROR_LOG:-$HOME/.local/share/dotbuntu/install_errors.log}"
+    local error_log_path="${ERROR_LOG:-$HOME/.local/share/dotmarchy/install_errors.log}"
     printf "%b" "${CGR}✓${CNC} ${BLD}Operaciones completadas:${CNC}\n"
     printf "%b" "  ${CGR}→${CNC} Sistema actualizado con ${BLD}pacman -Syu${CNC}\n"
     printf "%b" "  ${CGR}→${CNC} Repositorio ${BLD}Chaotic-AUR${CNC} configurado\n"
@@ -452,7 +453,7 @@ print_next_steps() {
 }
 
 print_resources() {
-    local error_log_path="${ERROR_LOG:-$HOME/.local/share/dotbuntu/install_errors.log}"
+    local error_log_path="${ERROR_LOG:-$HOME/.local/share/dotmarchy/install_errors.log}"
     printf "%b" "${BLD}${CBL}═══ RECURSOS ÚTILES ═══${CNC}\n\n"
     printf "%b" "  ${CBL}📖${CNC} Documentación: ${CBL}https://github.com/25ASAB015/dotmarchy${CNC}\n"
     printf "%b" "  ${CBL}🔍${CNC} Verificación:  ${CYE}dotmarchy --verify${CNC}\n"
@@ -473,7 +474,22 @@ ${BLD}${CBL}━━━━━━━━━━━━━━━━━━━━━━�
 # Backward compatibility aliases
 # DEPRECATED: Use show_* functions for new code
 #######################################
-logo() { show_logo "$@"; }
-dotmarchy_logo() { show_logo "$@"; }
-dotmarchy_welcome() { show_welcome "$@"; }
-dotmarchy_farewell() { show_farewell "$@"; }
+logo() {
+    show_logo "$@"
+}
+
+dotmarchy_logo() {
+    show_logo "$@"
+}
+
+dotmarchy_welcome() {
+    show_welcome "$@"
+}
+
+dotmarchy_farewell() {
+    show_farewell "$@"
+}
+
+# Export functions for use in other scripts
+export -f show_logo show_welcome show_farewell
+export -f logo dotmarchy_logo dotmarchy_welcome dotmarchy_farewell

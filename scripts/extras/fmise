@@ -37,7 +37,7 @@ source "${HELPER_DIR}/load_helpers.sh"
 load_helpers "${HELPER_DIR}" set_variable colors logger prompts checks
 
 # Ensure ERROR_LOG is always set (defensive default)
-: "${ERROR_LOG:=$HOME/.local/share/dotbuntu/install_errors.log}"
+: "${ERROR_LOG:=$HOME/.local/share/dotmarchy/install_errors.log}"
 export ERROR_LOG
 
 # Error handling

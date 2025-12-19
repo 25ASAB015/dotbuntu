@@ -155,17 +155,18 @@ export VERIFY_MODE="${VERIFY_MODE:-0}"
 export REPO_URL="${REPO_URL:-git@github.com:25ASAB015/dotfiles.git}"
 
 # Configuration paths
-export SETUP_CONFIG="${SETUP_CONFIG:-$HOME/.config/dotbuntu/setup.conf}"
-export DOTMARCHY_ERROR_LOG="${ERROR_LOG:-$HOME/.local/share/dotbuntu/install_errors.log}"
+export SETUP_CONFIG="${SETUP_CONFIG:-$HOME/.config/dotmarchy/setup.conf}"
+export DOTMARCHY_ERROR_LOG="${ERROR_LOG:-$HOME/.local/share/dotmarchy/install_errors.log}"
 
 # Core dependencies (always installed by dotmarchy)
-export CORE_DEPENDENCIES="zsh tree bat highlight ruby-coderay git-delta diff-so-fancy npm"
+# Note: git-delta and diff-so-fancy are platform-specific and installed via alternative methods
+export CORE_DEPENDENCIES="zsh tree bat highlight ruby-coderay npm"
 
 # Default extra packages
-export DEFAULT_EXTRA_DEPENDENCIES="neovim tmux htop ripgrep fd fzf"
+export DEFAULT_EXTRA_DEPENDENCIES="neovim tmux htop ripgrep fd fzf git-delta"
 export DEFAULT_EXTRA_CHAOTIC_DEPENDENCIES="brave-bin visual-studio-code-bin"
 export DEFAULT_EXTRA_AUR_APPS="zsh-theme-powerlevel10k-git zsh-autosuggestions zsh-syntax-highlighting"
-export DEFAULT_EXTRA_NPM_PACKAGES="@fission-ai/openspec"
+export DEFAULT_EXTRA_NPM_PACKAGES="@fission-ai/openspec diff-so-fancy"
 
 # Initialize arrays for extra packages
 declare -a EXTRA_DEPENDENCIES=()
