@@ -177,12 +177,83 @@ with pkgs; [
 ]
 ```
 
+## Opciones de Instalación de Nix
+
+El proyecto debe soportar múltiples métodos de instalación de Nix para dar flexibilidad al usuario:
+
+### **Método 1: Determinate Systems Installer** ⭐ (Recomendado)
+```bash
+curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix | sh -s -- install
+```
+
+**Ventajas:**
+- ✅ Desinstalación limpia con `nix-installer uninstall`
+- ✅ Mejor experiencia de usuario (mensajes claros, manejo de errores)
+- ✅ Flakes habilitados por defecto
+- ✅ Instalación más rápida
+- ✅ Mantenido por empresa especializada (Determinate Systems)
+
+**Por qué es recomendado:**
+- Para usuarios nuevos en Nix, la facilidad de desinstalación reduce el miedo a probarlo
+- Los mensajes de error son mucho más claros
+- Ya viene configurado para las características modernas de Nix
+
+### **Método 2: Instalador Oficial**
+```bash
+curl -L https://nixos.org/nix/install | sh -s -- --daemon
+```
+
+**Ventajas:**
+- ✅ Oficial del proyecto Nix
+- ✅ Más tiempo de maduración
+- ✅ Bien documentado
+
+**Desventajas:**
+- ❌ Desinstalación manual y compleja
+- ❌ Mensajes de error menos claros
+
+### **Método 3: Desde Repositorios de la Distro**
+
+**Arch Linux:**
+```bash
+sudo pacman -S nix
+sudo systemctl enable --now nix-daemon.service
+```
+
+**Ventajas:**
+- ✅ Integrado con el gestor de paquetes del sistema
+
+**Desventajas:**
+- ❌ Versiones desactualizadas
+- ❌ Configuración adicional necesaria
+- ❌ Solo disponible en algunas distros
+
+### **Decisión de Implementación**
+
+El script `bootstrap-nix.sh` debe:
+1. Detectar si Nix ya está instalado
+2. Ofrecer el instalador de Determinate Systems por defecto
+3. Permitir elegir instalador oficial como alternativa
+4. En Arch, ofrecer instalación desde pacman como opción
+
+```bash
+# Ejemplo de prompt interactivo
+echo "Selecciona método de instalación de Nix:"
+echo "1) Determinate Systems (recomendado - fácil desinstalación)"
+echo "2) Instalador oficial de Nix"
+echo "3) Desde repositorio de la distro (si disponible)"
+```
+
 ## Workflow del Usuario
 
 ### Setup Inicial (Nueva Máquina)
 ```bash
 # 1. Instalar Nix (funciona en cualquier distro)
-curl -L https://nixos.org/nix/install | sh -s -- --daemon
+# Opción A - Determinate Systems (Recomendado: mejor UX, desinstalación limpia)
+curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix | sh -s -- install
+
+# Opción B - Instalador oficial (tradicional)
+# curl -L https://nixos.org/nix/install | sh -s -- --daemon
 
 # 2. Clonar y ejecutar dotmarchy
 git clone https://github.com/25ASAB015/dotmarchy.git
@@ -225,8 +296,8 @@ dotbare pull
 
 ### Sincronizar con Nueva Máquina
 ```bash
-# 1. Instalar Nix
-curl -L https://nixos.org/nix/install | sh
+# 1. Instalar Nix (Determinate Systems recomendado)
+curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix | sh -s -- install
 
 # 2. Clonar dotfiles con dotbare
 dotbare finit -u git@github.com:tuuser/dotfiles.git
