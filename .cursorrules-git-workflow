@@ -1,0 +1,317 @@
+# Cursor Rules: Git PR Merge Workflow Automation
+
+## Slash Command: /git-pr-merge
+
+### Trigger Patterns
+- `/git-pr-merge`
+- `/pr-merge`
+- `/merge-workflow`
+
+### Command Description
+Automates the complete Git workflow: organize commits → create PR with GitHub CLI → merge → cleanup branches.
+
+### Invocation Format
+```
+/git-pr-merge [branch-name] [options]
+
+Options:
+  --base <branch>    Target branch for PR (default: master)
+  --skip-commits     Skip commit organization step
+  --draft            Create draft PR
+  --no-cleanup       Don't delete branches after merge
+  --dry-run          Show what would be done without executing
+```
+
+### Expected Behavior
+
+When user invokes `/git-pr-merge feat/my-feature`, the AI assistant MUST:
+
+#### Phase 1: Prerequisites Check
+```bash
+# Verify GitHub CLI is installed
+gh --version || { echo "Install GitHub CLI: https://cli.github.com"; exit 1; }
+
+# Verify authentication
+gh auth status || { echo "Run: gh auth login"; exit 1; }
+
+# Get current branch
+current_branch=$(git branch --show-current)
+
+# Verify we're on the target branch or checkout
+[[ "$current_branch" != "$branch_name" ]] && git checkout "$branch_name"
+
+# Get git status
+git status
+```
+
+#### Phase 2: Organize Commits (unless --skip-commits)
+
+**2.1 Analyze Changes**
+```bash
+# Show what's changed
+git status --short
+git diff --stat
+```
+
+**2.2 Group Changes Logically**
+
+Analyze the changes and group them by:
+- **Type**: feat, fix, docs, refactor, test, chore, style
+- **Scope**: What module/component is affected
+- **Related changes**: Files that should be committed together
+
+**2.3 Create Semantic Commits**
+
+For each logical group, create a commit following Conventional Commits:
+```bash
+git add <files-for-group>
+git commit -m "type(scope): description
+
+- Detailed point 1
+- Detailed point 2
+- Detailed point 3"
+```
+
+**Examples of good commit messages:**
+```
+feat(nix): implement auto-sync hook for packages.nix changes
+fix(imports): update package_manager.sh import paths
+docs(openspec): mark implementation tasks complete
+refactor(legacy): add deprecation warnings to all legacy scripts
+```
+
+**2.4 Push Commits**
+```bash
+git push origin "$branch_name"
+```
+
+#### Phase 3: Create Pull Request (ALWAYS use GitHub CLI)
+
+**3.1 Generate PR Description**
+
+Create comprehensive PR body including:
+- Summary (emoji + overview)
+- What's new/changed
+- Commit list with links
+- Testing checklist
+- Breaking changes (if any)
+- Documentation links
+- Related issues/OpenSpec changes
+
+**3.2 Create PR with GitHub CLI**
+```bash
+gh pr create \
+  --title "type: Brief descriptive title" \
+  --body "$pr_body" \
+  --base "${base_branch:-master}" \
+  --head "$branch_name" \
+  ${draft_flag:+--draft}
+```
+
+**3.3 Capture PR Number**
+```bash
+pr_number=$(gh pr list --head "$branch_name" --json number --jq '.[0].number')
+echo "✓ Created PR #$pr_number"
+```
+
+#### Phase 4: Merge Pull Request
+
+**4.1 Checkout Base Branch**
+```bash
+git checkout "${base_branch:-master}"
+```
+
+**4.2 Merge with --no-ff**
+```bash
+git merge "$branch_name" --no-ff -m "Merge pull request #$pr_number from $repo/$branch_name
+
+<commit-title>
+
+<brief-summary>"
+```
+
+**4.3 Push Merged Changes**
+```bash
+git push origin "${base_branch:-master}"
+```
+
+#### Phase 5: Cleanup (unless --no-cleanup)
+
+**5.1 Delete Local Branch**
+```bash
+git branch -d "$branch_name"
+echo "✓ Deleted local branch: $branch_name"
+```
+
+**5.2 Delete Remote Branch**
+```bash
+git push origin --delete "$branch_name"
+echo "✓ Deleted remote branch: origin/$branch_name"
+```
+
+**5.3 Synchronize**
+```bash
+git pull origin "${base_branch:-master}"
+echo "✓ Synchronized with remote"
+```
+
+**5.4 Verify Clean State**
+```bash
+git status
+# Should show: "working tree clean"
+```
+
+#### Phase 6: Summary Report
+
+Display final summary:
+```
+✅ Git PR Merge Workflow Complete!
+
+📊 Summary:
+   - Commits created: X
+   - PR created: #Y (https://github.com/org/repo/pull/Y)
+   - Base branch: master
+   - Merged: ✓
+   - Cleanup: ✓
+
+📁 Repository Status:
+   - Branch: master
+   - Status: Clean
+   - Sync: Up to date
+
+🎯 Next Steps:
+   - [List relevant next steps based on context]
+```
+
+### Error Handling
+
+If any step fails:
+1. Show clear error message
+2. Show command that failed
+3. Suggest remediation
+4. Ask user if they want to continue or abort
+
+### Example Interactions
+
+**Example 1: Full Workflow**
+```
+User: /git-pr-merge feat/add-feature
+
+AI: 
+✓ Prerequisites checked
+✓ On branch feat/add-feature
+
+Analyzing changes...
+Found 15 modified files in 3 logical groups
+
+Creating commits:
+1. feat(core): add new feature X (5 files)
+2. test(core): add tests for feature X (3 files)
+3. docs: update documentation (2 files)
+
+[Creates 3 commits, pushes]
+
+Creating PR...
+✓ PR #42 created: https://github.com/org/repo/pull/42
+
+Merging...
+✓ Merged to master
+
+Cleanup...
+✓ Branches deleted
+✓ Synchronized
+
+✅ Complete! Working tree clean.
+```
+
+**Example 2: Skip Commits**
+```
+User: /git-pr-merge feat/ready-to-merge --skip-commits
+
+AI:
+✓ Skipping commit organization
+✓ Changes already pushed
+
+Creating PR...
+✓ PR #43 created
+
+Merging...
+✓ Complete!
+```
+
+**Example 3: Draft PR**
+```
+User: /git-pr-merge feat/wip --draft
+
+AI:
+✓ Creating commits...
+✓ Draft PR #44 created (not ready for review)
+✓ Merged and cleaned up
+
+Note: PR was in draft mode but has been merged as requested.
+```
+
+### Context Awareness
+
+The assistant should:
+- Read recent git log to understand commit history
+- Analyze file types to suggest appropriate scopes
+- Check for OpenSpec changes to include in PR description
+- Look for CHANGELOG.md updates
+- Detect breaking changes
+- Identify related issues/tickets from commit messages
+
+### Integration with OpenSpec
+
+If OpenSpec change exists:
+- Reference it in PR description
+- Link to proposal.md, design.md, tasks.md
+- Include implementation status from tasks.md
+- Mention affected specs
+
+### Best Practices
+
+1. **Commit Messages**:
+   - Use Conventional Commits format
+   - Keep subject line under 72 characters
+   - Provide detailed body for complex changes
+   - Reference issues/tickets
+
+2. **PR Description**:
+   - Clear summary with context
+   - List all changes
+   - Include testing instructions
+   - Note breaking changes
+   - Link documentation
+
+3. **Error Prevention**:
+   - Always verify clean working tree before merge
+   - Confirm base branch is correct
+   - Validate PR was created before attempting merge
+
+4. **User Communication**:
+   - Show clear progress indicators
+   - Report each step completion
+   - Provide actionable error messages
+   - Suggest next steps
+
+### Required Tools
+
+- `git` (version 2.x+)
+- `gh` (GitHub CLI, version 2.x+)
+- Authenticated GitHub account
+- Write access to repository
+
+### Limitations
+
+- Only works with GitHub repositories
+- Requires GitHub CLI (not MCP GitKraken)
+- Assumes linear merge workflow (no rebasing)
+- Does not handle merge conflicts automatically
+
+### See Also
+
+- Conventional Commits: https://www.conventionalcommits.org/
+- GitHub CLI: https://cli.github.com/
+- Git workflow documentation: `.cursor/commands/git-pr-merge.md`
+
