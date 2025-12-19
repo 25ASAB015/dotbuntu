@@ -75,6 +75,14 @@ declare -A COLORS=(
     [bg_error]='\033[48;5;204m'
 )
 
+# Dotmarchy-style color variables (for compatibility)
+export BLD='\033[1m'
+export CGR='\033[38;5;114m'
+export CRE='\033[38;5;204m'
+export CYE='\033[38;5;221m'
+export CBL='\033[38;5;117m'
+export CNC='\033[0m'
+
 #==============================================================================
 # WORKFLOW STEP DESCRIPTIONS
 #==============================================================================
@@ -97,11 +105,17 @@ declare -A WORKFLOW_STEPS=(
 #==============================================================================
 
 # Script location and logging
-SCRIPT_DIR="${SCRIPT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+# Ensure SCRIPT_DIR is set to root if not already defined
+if [[ -z "${SCRIPT_DIR:-}" ]]; then
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+fi
+export SCRIPT_DIR
 LOG_FILE="${LOG_FILE:-$HOME/.gitconfig_setup.log}"
+export LOG_FILE
 
 # Debug mode
 DEBUG="${DEBUG:-false}"
+VERBOSE="${VERBOSE:-0}"
 
 # Interactive mode (can be overridden by --non-interactive)
 INTERACTIVE_MODE="${INTERACTIVE_MODE:-true}"
@@ -115,6 +129,64 @@ GH_INSTALL_ATTEMPTED="${GH_INSTALL_ATTEMPTED:-false}"
 # Track key upload status
 SSH_KEY_UPLOADED="${SSH_KEY_UPLOADED:-false}"
 GPG_KEY_UPLOADED="${GPG_KEY_UPLOADED:-false}"
+
+#==============================================================================
+# DOTMARCHY CONFIGURATION
+#==============================================================================
+
+# Dotbare configuration
+export DOTBARE_DIR="${DOTBARE_DIR:-$HOME/.cfg}"
+export DOTBARE_TREE="${DOTBARE_TREE:-$HOME}"
+export DOTBARE_BACKUP="${DOTBARE_BACKUP:-${XDG_DATA_HOME:-$HOME/.local/share}/dotbare}"
+
+# Versioning
+export DOTMARCHY_VERSION="${DOTMARCHY_VERSION:-v2.0.0}"
+export DOTBUNTU_VERSION="v1.0.0"
+
+# Dotmarchy Operational flags
+export DRY_RUN="${DRY_RUN:-0}"
+export FORCE="${FORCE:-0}"
+export INSTALL_EXTRAS="${INSTALL_EXTRAS:-0}"
+export SETUP_ENVIRONMENT="${SETUP_ENVIRONMENT:-0}"
+export SKIP_SYSTEM="${SKIP_SYSTEM:-0}"
+export VERIFY_MODE="${VERIFY_MODE:-0}"
+
+# Default repository URL
+export REPO_URL="${REPO_URL:-git@github.com:25ASAB015/dotfiles.git}"
+
+# Configuration paths
+export SETUP_CONFIG="${SETUP_CONFIG:-$HOME/.config/dotbuntu/setup.conf}"
+export DOTMARCHY_ERROR_LOG="${ERROR_LOG:-$HOME/.local/share/dotbuntu/install_errors.log}"
+
+# Core dependencies (always installed by dotmarchy)
+export CORE_DEPENDENCIES="zsh tree bat highlight ruby-coderay git-delta diff-so-fancy npm"
+
+# Default extra packages
+export DEFAULT_EXTRA_DEPENDENCIES="neovim tmux htop ripgrep fd fzf"
+export DEFAULT_EXTRA_CHAOTIC_DEPENDENCIES="brave-bin visual-studio-code-bin"
+export DEFAULT_EXTRA_AUR_APPS="zsh-theme-powerlevel10k-git zsh-autosuggestions zsh-syntax-highlighting"
+export DEFAULT_EXTRA_NPM_PACKAGES="@fission-ai/openspec"
+
+# Initialize arrays for extra packages
+declare -a EXTRA_DEPENDENCIES=()
+declare -a EXTRA_CHAOTIC_DEPENDENCIES=()
+declare -a EXTRA_AUR_APPS=()
+declare -a EXTRA_NPM_PACKAGES=()
+declare -a CARGO_PACKAGES=()
+declare -a PIP_PACKAGES=()
+declare -a PIPX_PACKAGES=()
+declare -a GEM_PACKAGES=()
+
+# Arrays for environment setup
+declare -a DIRECTORIES=()
+declare -a GIT_REPOS=()
+declare -a SCRIPTS=()
+declare -a SHELL_LINES=()
+
+# Installation statistics
+export INSTALL_START_TIME=$(date +%s)
+export PACKAGES_INSTALLED=0
+export PACKAGES_SKIPPED=0
 
 #==============================================================================
 # USER CONFIGURATION (set during runtime)
@@ -147,3 +219,4 @@ CURRENT_STEP="${CURRENT_STEP:-0}"
 
 # Email validation regex
 readonly EMAIL_REGEX='^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+

@@ -9,15 +9,15 @@
 
 set -Eeuo pipefail
 
+# SCRIPT_DIR is the scripts/ directory
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-readonly mydir="$SCRIPT_DIR"
+# HELPER_DIR is in the root helper/
 readonly HELPER_DIR="${SCRIPT_DIR}/../helper"
 
 # Source required helpers
 # shellcheck source=/dev/null
 source "${HELPER_DIR}/load_helpers.sh"
 load_helpers "${HELPER_DIR}" set_variable colors logger prompts
-trap on_error ERR
 
 # Verification counters
 SUCCESS_COUNT=0
@@ -30,7 +30,7 @@ function usage() {
   echo "Usage: fverify [-h]
 
 Verify installed tools and configuration.
-Can be run standalone with: dotmarchy --verify
+Can be run standalone with: dotbuntu --verify
 
 Optional arguments:
   -h, --help\t\tshow this help message"
@@ -93,7 +93,7 @@ function main() {
     [[ "${1:-}" =~ ^(-h|--help)$ ]] && usage && exit 0
     
     clear 2>/dev/null || true
-    logo "Verificación de Instalación - dotmarchy"
+    dotmarchy_logo "Verificación de Instalación - dotbuntu"
     
     printf "\n%b\n" "${BLD}${CBL}Verificando herramientas instaladas...${CNC}\n"
     
