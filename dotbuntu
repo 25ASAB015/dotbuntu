@@ -191,7 +191,7 @@ main() {
         info "Sistema operativo detectado: $os_type"
         
         # Show dotmarchy specific welcome and summary
-        dotmarchy_welcome
+        show_welcome
         
         # Phase 1.1: Dotbare (doesn't require specific distro)
         configure_dotbare
@@ -254,7 +254,7 @@ main() {
             execute_setup_operations
         fi
         
-        dotmarchy_farewell
+        show_farewell
     fi
 
     #==========================================================================

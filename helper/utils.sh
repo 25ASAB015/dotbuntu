@@ -334,7 +334,7 @@ For more information, visit: https://github.com/25asab015/dotbuntu
 EOF
 }
 
-dotmarchy_parse_arguments() {
+parse_arguments() {
     while [[ $# -gt 0 ]]; do
         case "$1" in
             -h|--help)
@@ -389,6 +389,10 @@ dotmarchy_parse_arguments() {
         esac
     done
 }
+
+# Backward compatibility alias
+dotmarchy_parse_arguments() { parse_arguments "$@"; }
+
 
 initialize_error_log() {
     : > "${ERROR_LOG}" || {

@@ -93,7 +93,7 @@ function main() {
     [[ "${1:-}" =~ ^(-h|--help)$ ]] && usage && exit 0
     
     clear 2>/dev/null || true
-    dotmarchy_logo "Verificación de Instalación - dotbuntu"
+    show_logo "Verificación de Instalación - dotbuntu"
     
     printf "\n%b\n" "${BLD}${CBL}Verificando herramientas instaladas...${CNC}\n"
     

@@ -177,10 +177,15 @@ verify_internet_connection() {
 # See package_manager.sh for the new multi-distro abstraction layer
 
 #######################################
-# Check if a package is installed (legacy - uses pacman)
+# Check if a package is installed (multi-distro)
 #
-# NOTE: Prefer is_pkg_installed() from package_manager.sh for multi-distro support.
-# This function is kept for backward compatibility with existing scripts.
+# Checks package installation using the appropriate package manager:
+# - Arch Linux: pacman -Qq
+# - Ubuntu/Debian: dpkg -l
+# - Fallback: command -v
+#
+# NOTE: For new code, prefer is_pkg_installed() from package_manager.sh
+#       which provides better package name mapping.
 #
 # Arguments:
 #   $1: Package name to check
@@ -189,11 +194,11 @@ verify_internet_connection() {
 #   0: Package is installed
 #   1: Package not installed or query failed
 #######################################
-is_installed() {
+is_package_installed() {
     local package="${1:-}"
     
     if [ -z "$package" ]; then
-        debug "is_installed called with empty package name"
+        debug "is_package_installed called with empty package name"
         return "${EXIT_FAILURE:-1}"
     fi
     
@@ -206,6 +211,12 @@ is_installed() {
         # Fallback: check if command exists
         command -v "$package" >/dev/null 2>&1
     fi
+}
+
+# Backward compatibility alias
+# DEPRECATED: Use is_package_installed() for new code
+is_installed() {
+    is_package_installed "$@"
 }
 
 # REMOVED: dotmarchy_initial_checks() - logic now inline in dotbuntu main script

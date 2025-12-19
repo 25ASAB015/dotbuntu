@@ -54,7 +54,7 @@ readonly DEFAULT_GEM_COUNT=1      # neovim
 # Arguments:
 #   $1: Message text to display below logo
 #######################################
-dotmarchy_logo() {
+show_logo() {
     local text="$1"
     printf "%b" "
    ▗▖                              ▗▖        
@@ -82,9 +82,9 @@ dotmarchy_logo() {
 # Returns:
 #   0 if user confirms, exits 0 if user cancels
 #######################################
-dotmarchy_welcome() {
+show_welcome() {
     clear_screen
-    dotmarchy_logo "Bienvenido a dotmarchy, $USER"
+    show_logo "Bienvenido a dotbuntu, $USER"
     show_welcome_intro
     show_basic_operations
     show_extras_section
@@ -96,7 +96,7 @@ dotmarchy_welcome() {
 #######################################
 # Farewell message with installation summary
 #######################################
-dotmarchy_farewell() {
+show_farewell() {
     local end_time
     local duration
     local minutes
@@ -370,7 +370,7 @@ format_repo_name() {
 #######################################
 
 print_farewell_banner() {
-    dotmarchy_logo "Instalación completada"
+    show_logo "Instalación completada"
 }
 
 print_completion_header() {
@@ -459,3 +459,10 @@ ${BLD}${CBL}━━━━━━━━━━━━━━━━━━━━━━�
 \n"
 }
 
+#######################################
+# Backward compatibility aliases
+# DEPRECATED: Use show_* functions for new code
+#######################################
+dotmarchy_logo() { show_logo "$@"; }
+dotmarchy_welcome() { show_welcome "$@"; }
+dotmarchy_farewell() { show_farewell "$@"; }
