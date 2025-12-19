@@ -6,8 +6,8 @@
 - [x] 1.1.1 Create `packages.nix` with current CORE_DEPENDENCIES equivalents
 - [x] 1.1.2 Add DEFAULT_EXTRA_DEPENDENCIES equivalents from setup.conf
 - [x] 1.1.3 Include language servers and dev tools
-- [ ] 1.1.4 Test packages.nix syntax with `nix-instantiate --eval`
-- [ ] 1.1.5 Verify all packages exist in nixpkgs with `nix search`
+- [ ] 1.1.4 TEST: Test packages.nix syntax with `nix-instantiate --eval` (MANUAL)
+- [ ] 1.1.5 TEST: Verify all packages exist in nixpkgs with `nix search` (MANUAL)
 
 ### 1.2 Implement NIX Installation Script
 - [x] 1.2.1 Create `scripts/bootstrap-nix.sh` with shebang and strict mode
@@ -16,7 +16,7 @@
 - [x] 1.2.4 Implement official NIX installer method
 - [x] 1.2.5 Implement distro package method (pacman for Arch)
 - [x] 1.2.6 Add interactive menu for installation method selection
-- [ ] 1.2.7 Test on Ubuntu (no NIX) and Arch (with/without NIX)
+- [ ] 1.2.7 TEST: Test on Ubuntu (no NIX) and Arch (with/without NIX) (MANUAL)
 
 ### 1.3 Create Package Sync Script
 - [x] 1.3.1 Create `scripts/sync-packages.sh` 
@@ -46,11 +46,11 @@
 - [x] 1.6.5 Add FAQ (disk space, uninstall, package not found)
 
 ### 1.7 Testing Phase 1
-- [ ] 1.7.1 Test `--nix` flag on clean Ubuntu 22.04
-- [ ] 1.7.2 Test `--nix` flag on clean Arch Linux
-- [ ] 1.7.3 Test with existing NIX installation
-- [ ] 1.7.4 Verify packages.nix installs all expected packages
-- [ ] 1.7.5 Confirm old method still works (no regression)
+- [ ] 1.7.1 TEST: Test `--nix` flag on clean Ubuntu 22.04 (MANUAL)
+- [ ] 1.7.2 TEST: Test `--nix` flag on clean Arch Linux (MANUAL)
+- [ ] 1.7.3 TEST: Test with existing NIX installation (MANUAL)
+- [ ] 1.7.4 TEST: Verify packages.nix installs all expected packages (MANUAL)
+- [ ] 1.7.5 TEST: Confirm old method still works (no regression) (MANUAL)
 
 ## Phase 2: Integration with dotbare (Week 2)
 
@@ -67,9 +67,9 @@
 - [x] 2.2.5 Implement error recovery (retry/skip/abort options)
 
 ### 2.3 Package Sync on Pull
-- [ ] 2.3.1 Create hook suggestion: sync-packages after `dotbare pull`
-- [ ] 2.3.2 Add `--auto-sync` option to apply packages.nix changes automatically
-- [ ] 2.3.3 Document manual sync workflow
+- [x] 2.3.1 Create hook suggestion: sync-packages after `dotbare pull`
+- [x] 2.3.2 Add `--auto-sync` option to apply packages.nix changes automatically
+- [x] 2.3.3 Document manual sync workflow
 
 ### 2.4 Migration Guide
 - [x] 2.4.1 Create `docs/MIGRATION.md`
@@ -86,11 +86,11 @@
 - [x] 2.5.5 Add warnings for unmapped packages
 
 ### 2.6 Testing Phase 2
-- [ ] 2.6.1 Test full workflow: install NIX → clone dotfiles → apply packages
-- [ ] 2.6.2 Test packages.nix versioning in dotbare repo
-- [ ] 2.6.3 Test sync after modifying packages.nix
-- [ ] 2.6.4 Test conversion script with real setup.conf files
-- [ ] 2.6.5 Beta test with 2-3 external users
+- [ ] 2.6.1 TEST: Test full workflow: install NIX → clone dotfiles → apply packages (MANUAL)
+- [ ] 2.6.2 TEST: Test packages.nix versioning in dotbare repo (MANUAL)
+- [ ] 2.6.3 TEST: Test sync after modifying packages.nix (MANUAL)
+- [ ] 2.6.4 TEST: Test conversion script with real setup.conf files (MANUAL)
+- [ ] 2.6.5 TEST: Beta test with 2-3 external users (MANUAL)
 
 ## Phase 3: Transition to NIX Default (Week 3)
 
@@ -103,7 +103,7 @@
 ### 3.2 Move Legacy Code
 - [x] 3.2.1 Create `scripts/legacy/` directory
 - [x] 3.2.2 Move `fdeps`, `faur`, `fchaotic`, `fchaotic-deps` to legacy/
-- [ ] 3.2.3 Move language-specific installers (fnpm, fcargo, etc.) to legacy/
+- [x] 3.2.3 Move language-specific installers (fnpm, fcargo, etc.) to legacy/
 - [x] 3.2.4 Keep scripts executable but mark as deprecated in headers
 - [x] 3.2.5 Update any imports/references to legacy scripts
 
@@ -134,27 +134,27 @@
 - [x] 3.6.5 Add diagrams (ASCII art or mermaid)
 
 ### 3.7 Testing Phase 3
-- [ ] 3.7.1 Full integration test on Arch (NIX default)
-- [ ] 3.7.2 Full integration test on Ubuntu (NIX default)
-- [ ] 3.7.3 Test `--legacy` flag still works
-- [ ] 3.7.4 Verify no code references to removed files
-- [ ] 3.7.5 Run shellcheck on all modified scripts
+- [ ] 3.7.1 TEST: Full integration test on Arch (NIX default) (MANUAL)
+- [ ] 3.7.2 TEST: Full integration test on Ubuntu (NIX default) (MANUAL)
+- [ ] 3.7.3 TEST: Test `--legacy` flag still works (MANUAL)
+- [x] 3.7.4 Verify no code references to removed files
+- [ ] 3.7.5 TEST: Run shellcheck on all modified scripts (MANUAL)
 
 ## Phase 4: Polish and Release (Week 4)
 
 ### 4.1 Comprehensive Testing
-- [ ] 4.1.1 Test on fresh Ubuntu 20.04, 22.04, 24.04
-- [ ] 4.1.2 Test on fresh Arch Linux
-- [ ] 4.1.3 Test on Debian 11, 12
-- [ ] 4.1.4 Test with different shells (bash, zsh)
-- [ ] 4.1.5 Test uninstall and reinstall flow
+- [ ] 4.1.1 TEST: Test on fresh Ubuntu 20.04, 22.04, 24.04 (MANUAL)
+- [ ] 4.1.2 TEST: Test on fresh Arch Linux (MANUAL)
+- [ ] 4.1.3 TEST: Test on Debian 11, 12 (MANUAL)
+- [ ] 4.1.4 TEST: Test with different shells (bash, zsh) (MANUAL)
+- [ ] 4.1.5 TEST: Test uninstall and reinstall flow (MANUAL)
 
 ### 4.2 Error Handling and UX
-- [ ] 4.2.1 Review all error messages for clarity
-- [ ] 4.2.2 Add helpful suggestions to error messages
-- [ ] 4.2.3 Ensure progress indicators work correctly
-- [ ] 4.2.4 Test interruption handling (Ctrl+C)
-- [ ] 4.2.5 Verify logging to ERROR_LOG is complete
+- [x] 4.2.1 Review all error messages for clarity
+- [x] 4.2.2 Add helpful suggestions to error messages
+- [x] 4.2.3 Ensure progress indicators work correctly
+- [ ] 4.2.4 TEST: Test interruption handling (Ctrl+C) (MANUAL)
+- [x] 4.2.5 Verify logging to ERROR_LOG is complete
 
 ### 4.3 Documentation Polish
 - [x] 4.3.1 Proofread all documentation (spelling, grammar)
@@ -164,41 +164,41 @@
 - [x] 4.3.5 Create upgrade guide (v1.x → v2.0.0)
 
 ### 4.4 Demo Materials
-- [ ] 4.4.1 Create animated GIF: fresh install flow
-- [ ] 4.4.2 Create animated GIF: sync packages workflow
-- [ ] 4.4.3 Add GIFs to README.md
-- [ ] 4.4.4 Optional: Create 2-minute demo video
-- [ ] 4.4.5 Take screenshots for documentation
+- [ ] 4.4.1 OPTIONAL: Create animated GIF: fresh install flow
+- [ ] 4.4.2 OPTIONAL: Create animated GIF: sync packages workflow
+- [ ] 4.4.3 OPTIONAL: Add GIFs to README.md
+- [ ] 4.4.4 OPTIONAL: Create 2-minute demo video
+- [ ] 4.4.5 OPTIONAL: Take screenshots for documentation
 
 ### 4.5 Release Preparation
 - [x] 4.5.1 Update version to 2.0.0 in all files
 - [x] 4.5.2 Create comprehensive release notes
-- [ ] 4.5.3 Tag v2.0.0-rc1 for release candidate testing
-- [ ] 4.5.4 Beta test release candidate for 3-5 days
-- [ ] 4.5.5 Address any critical bugs from RC
+- [ ] 4.5.3 USER: Tag v2.0.0-rc1 for release candidate testing
+- [ ] 4.5.4 USER: Beta test release candidate for 3-5 days
+- [ ] 4.5.5 USER: Address any critical bugs from RC
 
 ### 4.6 Release
-- [ ] 4.6.1 Merge `feat/nix-dotbare` to `master`
-- [ ] 4.6.2 Create GitHub release v2.0.0
-- [ ] 4.6.3 Attach any binary artifacts (if applicable)
-- [ ] 4.6.4 Announce on GitHub discussions
-- [ ] 4.6.5 Update social media / project website
+- [ ] 4.6.1 USER: Merge `feat/nix-dotbare` to `master`
+- [ ] 4.6.2 USER: Create GitHub release v2.0.0
+- [ ] 4.6.3 USER: Attach any binary artifacts (if applicable)
+- [ ] 4.6.4 USER: Announce on GitHub discussions
+- [ ] 4.6.5 USER: Update social media / project website
 
 ### 4.7 Post-Release Monitoring
-- [ ] 4.7.1 Monitor GitHub issues for bug reports (first 2 weeks)
-- [ ] 4.7.2 Collect user feedback on NIX transition
-- [ ] 4.7.3 Update FAQ based on common questions
-- [ ] 4.7.4 Plan v2.1.0 improvements based on feedback
-- [ ] 4.7.5 Schedule legacy code removal for v3.0.0 (3 months)
+- [ ] 4.7.1 USER: Monitor GitHub issues for bug reports (first 2 weeks)
+- [ ] 4.7.2 USER: Collect user feedback on NIX transition
+- [ ] 4.7.3 USER: Update FAQ based on common questions
+- [ ] 4.7.4 USER: Plan v2.1.0 improvements based on feedback
+- [ ] 4.7.5 USER: Schedule legacy code removal for v3.0.0 (3 months)
 
 ## Validation Tasks (Ongoing)
 
 ### Continuous Validation
-- [ ] Run `shellcheck` on all modified shell scripts
-- [ ] Run `shfmt -d` to check formatting
-- [ ] Test on both Arch and Ubuntu after each phase
-- [ ] Update documentation as implementation evolves
-- [ ] Keep CHANGELOG.md updated with each task completion
+- [ ] TEST: Run `shellcheck` on all modified shell scripts (MANUAL)
+- [ ] TEST: Run `shfmt -d` to check formatting (MANUAL)
+- [ ] TEST: Test on both Arch and Ubuntu after each phase (MANUAL)
+- [x] Update documentation as implementation evolves
+- [ ] USER: Keep CHANGELOG.md updated with each task completion
 
 ## Dependencies
 
