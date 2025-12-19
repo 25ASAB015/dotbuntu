@@ -64,30 +64,28 @@ source "${SCRIPT_DIR}/scripts/finalize.sh"
 #==============================================================================
 
 show_help() {
-    cat << EOF
-${COLORS[bold]}${COLORS[primary]}dotbuntu${COLORS[reset]} ${DOTBUNTU_VERSION}
-Unified system configuration and dotfiles management tool
-
-${COLORS[bold]}Usage:${COLORS[reset]}
-  ${0##*/} [OPTIONS] [REPO_URL]
-
-${COLORS[bold]}Options:${COLORS[reset]}
-  -h, --help          Show this help message and exit
-  --non-interactive   Run Git configuration without prompts
-  --auto-upload       Automatically upload keys to GitHub
-  --extras            Install extra packages (npm, cargo, pip, etc.)
-  --setup-env         Setup environment (directories, repos, shell config)
-  --verify            Run verification checks and exit
-  --repo URL          Override default dotfiles repository URL
-  -v, --verbose       Enable verbose output
-  -f, --force         Force operations without prompts
-
-${COLORS[bold]}Examples:${COLORS[reset]}
-  ${0##*/}                            # Standard Git & Core setup
-  ${0##*/} --extras --setup-env       # Full dev environment setup
-  ${0##*/} --repo git@github.com:u/d.git
-  ${0##*/} --verify                   # Run diagnostics
-EOF
+    printf "%b\n" "${COLORS[bold]}${COLORS[primary]}dotbuntu${COLORS[reset]} ${DOTBUNTU_VERSION}"
+    printf "%b\n" "Unified system configuration and dotfiles management tool"
+    printf "\n"
+    printf "%b\n" "${COLORS[bold]}Usage:${COLORS[reset]}"
+    printf "%b\n" "  ${0##*/} [OPTIONS] [REPO_URL]"
+    printf "\n"
+    printf "%b\n" "${COLORS[bold]}Options:${COLORS[reset]}"
+    printf "%b\n" "  -h, --help          Show this help message and exit"
+    printf "%b\n" "  --non-interactive   Run Git configuration without prompts"
+    printf "%b\n" "  --auto-upload       Automatically upload keys to GitHub"
+    printf "%b\n" "  --extras            Install extra packages (npm, cargo, pip, etc.)"
+    printf "%b\n" "  --setup-env         Setup environment (directories, repos, shell config)"
+    printf "%b\n" "  --verify            Run verification checks and exit"
+    printf "%b\n" "  --repo URL          Override default dotfiles repository URL"
+    printf "%b\n" "  -v, --verbose       Enable verbose output"
+    printf "%b\n" "  -f, --force         Force operations without prompts"
+    printf "\n"
+    printf "%b\n" "${COLORS[bold]}Examples:${COLORS[reset]}"
+    printf "%b\n" "  ${0##*/}                            # Standard Git & Core setup"
+    printf "%b\n" "  ${0##*/} --extras --setup-env       # Full dev environment setup"
+    printf "%b\n" "  ${0##*/} --repo git@github.com:u/d.git"
+    printf "%b\n" "  ${0##*/} --verify                   # Run diagnostics"
 }
 
 parse_arguments() {
@@ -153,6 +151,7 @@ main() {
     
     # Initialize dotmarchy error log
     if [[ -n "${DOTMARCHY_ERROR_LOG:-}" ]]; then
+        mkdir -p "$(dirname "${DOTMARCHY_ERROR_LOG}")" 2>/dev/null || true
         : > "${DOTMARCHY_ERROR_LOG}"
     fi
 

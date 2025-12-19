@@ -34,7 +34,7 @@ fi
 # Constants and Configuration
 #######################################
 if [ -z "${HELPER_DIR+x}" ]; then
-    readonly HELPER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    HELPER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 fi
 
 # Network check configuration

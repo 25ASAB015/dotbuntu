@@ -37,7 +37,9 @@ set -Eeuo pipefail
 #######################################
 # Constants and Configuration
 #######################################
-readonly HELPER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -z "${HELPER_DIR:-}" ]; then
+    HELPER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+fi
 
 # Default error log location (can be overridden by set_variable.sh)
 readonly DEFAULT_ERROR_LOG="/tmp/dotmarchy-error.log"
