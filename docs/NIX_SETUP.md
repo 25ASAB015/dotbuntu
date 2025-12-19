@@ -166,6 +166,71 @@ nix-collect-garbage -d
 
 This removes old package versions and generations.
 
+### Auto-Sync After Dotbare Pull
+
+When you pull dotfiles changes with `dotbare pull`, the system can automatically detect
+changes to `packages.nix` and offer to sync packages.
+
+#### Manual Invocation
+
+After pulling dotfiles:
+
+```bash
+./scripts/post-dotbare-pull.sh
+```
+
+This will:
+1. Detect if `packages.nix` was modified in the last pull
+2. Show a diff of package changes
+3. Ask if you want to sync packages now
+4. Execute sync if approved
+
+#### Automatic Mode
+
+For non-interactive workflows:
+
+```bash
+./scripts/post-dotbare-pull.sh --auto-sync
+```
+
+Or set the environment variable:
+
+```bash
+export AUTO_SYNC=1
+dotbare pull
+./scripts/post-dotbare-pull.sh
+```
+
+#### Integration with Dotbare
+
+To automatically run the hook after every `dotbare pull`, add an alias to your shell RC:
+
+```bash
+# In ~/.bashrc or ~/.zshrc
+alias dotbare-pull='dotbare pull && $HOME/dotbuntu/scripts/post-dotbare-pull.sh'
+```
+
+Then use `dotbare-pull` instead of `dotbare pull`.
+
+#### Manual Sync Workflow
+
+If you prefer full control, you can always sync packages manually:
+
+1. **Pull dotfiles**:
+   ```bash
+   dotbare pull
+   ```
+
+2. **Check what changed**:
+   ```bash
+   dotbare diff HEAD@{1} HEAD -- .config/dotmarchy/packages.nix
+   ```
+
+3. **Sync when ready**:
+   ```bash
+   ./scripts/sync-packages.sh
+   ```
+
 ## Troubleshooting
 
 ### NIX not in PATH
