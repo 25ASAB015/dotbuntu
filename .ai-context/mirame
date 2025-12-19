@@ -1,0 +1,5 @@
+Problem:
+- bootstrap-nix.sh uses success() and error() functions
+- These functions exist in scripts/core/logger.sh (gitconfig style)
+- But bootstrap-nix.sh loads from helper/logger.sh (dotmarchy style)
+- helper/logger.sh only had: log(), info(), warn(), log_error(), debug()
