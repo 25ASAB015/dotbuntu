@@ -46,44 +46,167 @@ git status
 
 #### Phase 2: Organize Commits (unless --skip-commits)
 
-**2.1 Analyze Changes**
+**CRITICAL: ALWAYS CREATE MULTIPLE COMMITS - NEVER ONE GIANT COMMIT**
+
+The AI MUST analyze changes and create SEPARATE commits for different logical groups.
+Minimum 2 commits if there are diverse changes. Typical range: 3-7 commits per PR.
+
+**2.1 Analyze Changes in Detail**
 ```bash
 # Show what's changed
 git status --short
 git diff --stat
+git diff --name-status
 ```
 
-**2.2 Group Changes Logically**
+**2.2 Group Changes Logically (MANDATORY SEPARATION)**
 
-Analyze the changes and group them by:
-- **Type**: feat, fix, docs, refactor, test, chore, style
-- **Scope**: What module/component is affected
-- **Related changes**: Files that should be committed together
+Analyze ALL changed files and group them by these criteria:
 
-**2.3 Create Semantic Commits**
+**Primary Grouping (Separate commits for each):**
+1. **New Features** - Files implementing new functionality
+2. **Bug Fixes** - Files fixing existing issues
+3. **Documentation** - README, docs/, comments
+4. **Tests** - Test files, test utilities
+5. **Refactoring** - Code improvements without behavior change
+6. **Configuration** - Config files, .cursorrules, package.json, etc.
+7. **Dependencies** - package.json, requirements.txt, Gemfile changes
+8. **Deprecations** - Adding deprecation warnings
+9. **Breaking Changes** - Changes that break backward compatibility
 
-For each logical group, create a commit following Conventional Commits:
+**Secondary Grouping (Within same type):**
+- **By module/component**: Group files from same feature/module
+- **By layer**: Separate frontend, backend, database, scripts
+- **By impact**: Critical vs non-critical changes
+
+**Example Grouping Decision Process:**
+
+Given these changes:
+```
+M  src/auth.js
+M  src/auth.test.js
+M  docs/API.md
+M  README.md
+M  scripts/setup.sh
+M  scripts/legacy/old.sh
+M  package.json
+M  .cursorrules
+```
+
+**Correct grouping (5 commits):**
+1. `feat(auth): implement JWT authentication` → src/auth.js
+2. `test(auth): add authentication tests` → src/auth.test.js
+3. `docs: update API and README` → docs/API.md, README.md
+4. `refactor(scripts): improve setup script` → scripts/setup.sh
+5. `refactor(legacy): add deprecation warning` → scripts/legacy/old.sh
+6. `chore: update dependencies` → package.json
+7. `feat(cursor): add new command` → .cursorrules
+
+**Wrong grouping (DO NOT DO THIS):**
+```
+git add .
+git commit -m "feat: various changes"  ❌ NEVER DO THIS
+```
+
+**2.3 Create Semantic Commits (ONE AT A TIME)**
+
+For EACH logical group identified above:
+
 ```bash
-git add <files-for-group>
-git commit -m "type(scope): description
+# Commit 1
+git add <files-for-group-1>
+git commit -m "type(scope): clear description
 
-- Detailed point 1
-- Detailed point 2
-- Detailed point 3"
+- Specific change 1
+- Specific change 2
+- Specific change 3
+
+Reasoning/context if needed."
+
+# Commit 2
+git add <files-for-group-2>
+git commit -m "type(scope): clear description
+
+- Specific change 1
+- Specific change 2"
+
+# Continue for each group...
 ```
 
-**Examples of good commit messages:**
+**Commit Message Quality Requirements:**
+
+Each commit MUST have:
+- **Clear type**: feat, fix, docs, refactor, test, chore, style, perf
+- **Specific scope**: Module/component name (auth, nix, legacy, cursor, etc.)
+- **Descriptive subject**: What was done (max 72 chars)
+- **Detailed body**: List of specific changes (3-5 bullet points)
+- **Context if needed**: Why this change was made
+
+**Real Examples from Recent Work:**
 ```
-feat(nix): implement auto-sync hook for packages.nix changes
-fix(imports): update package_manager.sh import paths
-docs(openspec): mark implementation tasks complete
-refactor(legacy): add deprecation warnings to all legacy scripts
+✓ feat(nix): implement auto-sync hook for packages.nix changes
+
+- Add post-dotbare-pull.sh script (267 lines)
+- Auto-detects packages.nix modifications after dotbare pull
+- Shows colorized diff (diff-so-fancy/delta support)
+- Interactive mode with user confirmation
+- --auto-sync flag for non-interactive workflows
+
+✓ refactor(legacy): add deprecation warnings to all legacy scripts
+
+- Add headers to 9 legacy package management scripts
+- Clear warning: "Will be removed in v3.0.0 (2026-03-01)"
+- Migration instructions included
+- Scripts still functional with --legacy flag
+
+✓ fix(imports): update package_manager.sh import paths
+
+- scripts/core/fzsh: Update to ../scripts/deprecated/package_manager.sh
+- scripts/core/fupdate: Update to ../scripts/deprecated/package_manager.sh
+- helper/utils.sh: Update path with "(LEGACY MODE)" comment
 ```
 
-**2.4 Push Commits**
+**2.4 Show Commit Summary Before Pushing**
+
+Before pushing, show the user what commits were created:
+```bash
+echo "Created commits:"
+git log --oneline origin/$branch_name..HEAD
+
+echo ""
+echo "Commits to be pushed:"
+git log --pretty=format:"%h - %s" origin/$branch_name..HEAD
+```
+
+Ask user: "Push these N commits to origin/$branch_name? (y/n)"
+
+If yes:
 ```bash
 git push origin "$branch_name"
 ```
+
+**2.5 Commit Organization Guidelines**
+
+**DO:**
+- Create 3-7 commits for typical PRs
+- Separate by type and scope
+- Keep related changes together
+- Make each commit self-contained
+- Write detailed commit bodies
+- Group tests with related code only if trivial
+
+**DON'T:**
+- Create one giant commit with all changes
+- Mix unrelated changes in one commit
+- Create too many tiny commits (unless needed)
+- Use vague commit messages
+- Forget to explain "why" for non-obvious changes
+
+**Minimum Commit Requirements:**
+- Changes affecting 1-3 files: At least 1 commit
+- Changes affecting 4-10 files: At least 2-3 commits
+- Changes affecting 10+ files: At least 3-5 commits
+- Changes with different types (feat + fix + docs): Separate commits for each type
 
 #### Phase 3: Create Pull Request (ALWAYS use GitHub CLI)
 
@@ -251,6 +374,144 @@ AI:
 Note: PR was in draft mode but has been merged as requested.
 ```
 
+### Commit Organization Examples
+
+**Scenario 1: Mixed Changes (15 files)**
+
+Files changed:
+```
+M  src/auth/login.js
+M  src/auth/logout.js
+M  src/auth/auth.test.js
+M  src/utils/validator.js
+M  docs/auth.md
+M  README.md
+M  scripts/legacy/fdeps
+M  scripts/legacy/faur
+M  helper/utils.sh
+M  .cursorrules
+M  package.json
+M  CHANGELOG.md
+A  scripts/post-hook.sh
+A  docs/MIGRATION.md
+```
+
+**Correct: 6 commits**
+```
+1. feat(auth): implement login and logout functionality
+   - src/auth/login.js
+   - src/auth/logout.js
+
+2. test(auth): add authentication tests
+   - src/auth/auth.test.js
+
+3. refactor(utils): improve input validation
+   - src/utils/validator.js
+   - helper/utils.sh
+
+4. feat(scripts): add post-hook automation script
+   - scripts/post-hook.sh
+
+5. refactor(legacy): add deprecation warnings
+   - scripts/legacy/fdeps
+   - scripts/legacy/faur
+
+6. docs: update documentation and changelog
+   - docs/auth.md
+   - docs/MIGRATION.md
+   - README.md
+   - CHANGELOG.md
+
+7. chore: add cursor command and update dependencies
+   - .cursorrules
+   - package.json
+```
+
+**Scenario 2: Single Feature (8 files)**
+
+Files changed:
+```
+M  src/payment/stripe.js
+M  src/payment/paypal.js
+M  src/payment/processor.js
+M  src/payment/payment.test.js
+M  docs/payment-api.md
+M  config/payment.config.js
+M  CHANGELOG.md
+```
+
+**Correct: 3 commits**
+```
+1. feat(payment): implement Stripe and PayPal integration
+   - src/payment/stripe.js
+   - src/payment/paypal.js
+   - src/payment/processor.js
+   - config/payment.config.js
+
+2. test(payment): add payment processor tests
+   - src/payment/payment.test.js
+
+3. docs: document payment API
+   - docs/payment-api.md
+   - CHANGELOG.md
+```
+
+**Scenario 3: Bug Fix + Improvements (5 files)**
+
+Files changed:
+```
+M  src/database/connection.js
+M  src/database/connection.test.js
+M  src/utils/retry.js
+M  docs/troubleshooting.md
+M  README.md
+```
+
+**Correct: 3 commits**
+```
+1. fix(database): resolve connection timeout issue
+   - src/database/connection.js
+   - src/utils/retry.js
+
+2. test(database): add connection timeout tests
+   - src/database/connection.test.js
+
+3. docs: add troubleshooting section for database
+   - docs/troubleshooting.md
+   - README.md
+```
+
+### Commit Verification
+
+After creating commits, the AI MUST verify:
+
+```bash
+# Count commits created
+commit_count=$(git rev-list --count origin/$branch_name..HEAD)
+
+if [ "$commit_count" -eq 0 ]; then
+    echo "ERROR: No commits created!"
+    exit 1
+fi
+
+if [ "$commit_count" -eq 1 ]; then
+    echo "WARNING: Only 1 commit created. Review if changes should be split."
+    # Show what's in the commit
+    git show HEAD --stat
+    echo ""
+    echo "If this contains multiple unrelated changes, consider splitting."
+fi
+
+if [ "$commit_count" -ge 2 ]; then
+    echo "✓ Created $commit_count commits (good commit organization)"
+fi
+
+# Show commit summary
+echo ""
+echo "Commits created:"
+git log --oneline --graph origin/$branch_name..HEAD
+```
+
 ### Context Awareness
 
 The assistant should:
@@ -260,6 +521,9 @@ The assistant should:
 - Look for CHANGELOG.md updates
 - Detect breaking changes
 - Identify related issues/tickets from commit messages
+- **Count changed files and ensure appropriate number of commits**
+- **Never create a single commit for 5+ unrelated files**
+- **Always split feat + fix + docs into separate commits**
 
 ### Integration with OpenSpec
 
