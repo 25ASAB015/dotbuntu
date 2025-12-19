@@ -244,15 +244,20 @@ update_remote_url() {
 handle_different_remote() {
     local current="$1"
     local target="$2"
+    local normalized_current normalized_target
+    
+    # Normalize URLs for display
+    normalized_current=$(normalize_repo_url "$current")
+    normalized_target=$(normalize_repo_url "$target")
     
     if [ "${FORCE:-0}" -eq 1 ]; then
-        printf "%b\n" "${BLD}${CYE}Different remote detected (${CBL}${current}${CYE})"
-        printf "%b\n" "Replacing with ${CBL}${target}${CYE} (--force enabled)${CNC}"
+        printf "%b\n" "${BLD}${CYE}Different remote detected (${CBL}${normalized_current}${CYE})"
+        printf "%b\n" "Replacing with ${CBL}${normalized_target}${CYE} (--force enabled)${CNC}"
         update_remote_url "$target"
         return $?
     fi
     
-    printf "%b\n" "${BLD}${CYE}Different remote detected (${CBL}${current}${CYE})"
+    printf "%b\n" "${BLD}${CYE}Different remote detected (${CBL}${normalized_current}${CYE})"
     printf "%b\n" "Keeping existing remote. Use --force to change it.${CNC}"
     return 0
 }
@@ -263,18 +268,20 @@ handle_different_remote() {
 #   0 on success, 1 on failure
 #######################################
 validate_remote_url() {
-    local current_url
+    local current_url normalized_url
     current_url=$(get_remote_url "$DOTBARE_DIR")
     
     [ -z "$current_url" ] && return 0
     
     if are_urls_equivalent "$current_url" "$REPO_URL"; then
         if needs_github_ssh_canonicalization "$current_url" "$REPO_URL"; then
-            printf "%b\n" "${BLD}${CYE}Remote URL is equivalent but not canonical; updating...${CNC}"
+            normalized_url=$(normalize_repo_url "$REPO_URL")
+            printf "%b\n" "${BLD}${CYE}Remote URL is equivalent but not canonical; updating to ${CBL}${normalized_url}${CYE}...${CNC}"
             update_remote_url "$REPO_URL"
             return $?
         fi
-        printf "%b\n" "${BLD}${CGR}Remote URL is correct${CNC}"
+        normalized_url=$(normalize_repo_url "$current_url")
+        printf "%b\n" "${BLD}${CGR}Remote URL is correct: ${CBL}${normalized_url}${CNC}"
         return 0
     fi
     
@@ -757,7 +764,13 @@ configure_dotbare() {
     # Check if already configured
     if validate_existing_repository; then
         configure_branch_tracking
-        display_success
+        # Get and normalize the current remote URL for display
+        local current_url
+        current_url=$(get_remote_url "$DOTBARE_DIR")
+        if [ -n "$current_url" ]; then
+            current_url=$(normalize_repo_url "$current_url")
+        fi
+        display_success "$current_url"
         return 0
     fi
     
