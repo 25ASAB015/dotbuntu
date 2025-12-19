@@ -40,8 +40,8 @@ logo() {
     printf "%b\n" "$(c primary)  ╚██████╗██║  ██║██║██╔╝ ██╗╚██████╔╝███████║$(cr)"
     printf "%b\n" "$(c primary)   ╚═════╝╚═╝  ╚═╝╚═╝╚═╝  ╚═╝ ╚═════╝ ╚══════╝$(cr)"
     echo ""
-    printf "%b\n" "$(c accent)  🔧 Configuración Profesional de Git & GitHub$(cr)"
-    printf "%b\n" "$(c muted)     Automatiza tu entorno de desarrollo$(cr)"
+    printf "%b\n" "$(c accent)  🛠️  dotbuntu - Configuración Unificada del Sistema$(cr)"
+    printf "%b\n" "$(c muted)     Dotfiles, Paquetes y Git en una sola herramienta$(cr)"
     echo ""
 }
 
@@ -300,21 +300,26 @@ welcome() {
     show_separator
     
     # Welcome message
-    printf "%b\n" "$(c bold)$(c text)Bienvenido al configurador de Git$(cr)"
-    printf "%b\n" "$(c muted)Este script configurará:$(cr)"
-    printf "%b\n" "  $(c bold)$(c success)•$(cr) $(c bold)Llaves SSH para autenticación con GitHub$(cr)"
-    printf "%b\n" "  $(c bold)$(c success)•$(cr) $(c bold)Llaves GPG para firmar commits (opcional)$(cr)"
-    printf "%b\n" "  $(c bold)$(c success)•$(cr) $(c bold)Configurar tu archivo $(c primary).gitconfig$(cr) con nombre, email y preferencias recomendadas$(cr)"
-    printf "%b\n" "  $(c bold)$(c success)•$(cr) $(c bold)Git Credential Manager$(cr)"
-    printf "%b\n" "  $(c bold)$(c success)•$(cr) $(c bold)GitHub CLI (gh)$(cr)"
+    printf "%b\n" "$(c bold)$(c text)Bienvenido a dotbuntu$(cr)"
+    printf "%b\n" "$(c muted)Esta herramienta puede configurar:$(cr)"
+    printf "%b\n" ""
+    printf "%b\n" "  $(c bold)$(c primary)📦 Dotfiles y Sistema:$(cr)"
+    printf "%b\n" "  $(c bold)$(c success)•$(cr) Gestión de dotfiles con $(c primary)dotbare$(cr)"
+    printf "%b\n" "  $(c bold)$(c success)•$(cr) Instalación de paquetes del sistema (Arch Linux)"
+    printf "%b\n" "  $(c bold)$(c success)•$(cr) Configuración de entorno de desarrollo"
+    printf "%b\n" ""
+    printf "%b\n" "  $(c bold)$(c primary)🔑 Git & GitHub:$(cr)"
+    printf "%b\n" "  $(c bold)$(c success)•$(cr) Llaves SSH y GPG"
+    printf "%b\n" "  $(c bold)$(c success)•$(cr) Configuración profesional de $(c primary).gitconfig$(cr)"
+    printf "%b\n" "  $(c bold)$(c success)•$(cr) Integración con GitHub CLI"
     
     # Display separator
     show_separator
     echo ""
     
     # Safety notice
-    printf "%b\n" "$(c warning)!$(cr) $(c muted)Este script NO realiza cambios peligrosos en tu sistema$(cr)"
-    printf "%b\n" "$(c warning)!$(cr) $(c muted)Solo edita configuraciones relacionadas a Git y GitHub en tu usuario$(cr)"
+    printf "%b\n" "$(c warning)!$(cr) $(c muted)Este script NO requiere permisos de root$(cr)"
+    printf "%b\n" "$(c warning)!$(cr) $(c muted)Todas las configuraciones son reversibles y se hacen backups automáticos$(cr)"
     echo ""
     
     # Show non-interactive mode info if active
