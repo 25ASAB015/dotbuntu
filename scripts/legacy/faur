@@ -2,6 +2,11 @@
 # shellcheck shell=bash
 # shfmt: -ln=bash
 #
+# ⚠️  DEPRECATED - This script is deprecated and will be removed in v3.0.0 (2026-03-01)
+# Use NIX package manager instead: ./dotbuntu (NIX is now default)
+# For legacy mode: ./dotbuntu --legacy
+# Migration guide: docs/MIGRATION.md
+#
 # faur - Install dependencies from AUR (Arch User Repository)
 #
 # Installs packages from AUR using paru. Always installs dotbare.
