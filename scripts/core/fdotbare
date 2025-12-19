@@ -627,6 +627,22 @@ setup_environment() {
 
 #######################################
 # Suggest tracking packages.nix in dotbare
+#
+# Detects if packages.nix exists and is not tracked.
+# Displays visual prompt with commands to track the file.
+#
+# Globals:
+#   DOTBARE_DIR - Dotbare repository location
+#   HOME - User's home directory
+#
+# Arguments:
+#   None
+#
+# Returns:
+#   0 - Always succeeds
+#
+# Outputs:
+#   STDOUT - Tracking suggestion (if applicable)
 #######################################
 suggest_packages_nix_tracking() {
     local packages_nix="$HOME/.config/dotmarchy/packages.nix"
@@ -660,6 +676,52 @@ suggest_packages_nix_tracking() {
 }
 
 #######################################
+# Suggest package synchronization after dotbare pull
+#
+# Checks if packages.nix was updated in the last pull and suggests
+# running sync-packages.sh to install new/updated packages.
+#
+# Globals:
+#   DOTBARE_DIR - Dotbare repository location
+#   HOME - User's home directory
+#   SCRIPT_DIR - Script directory (for finding sync-packages.sh)
+#
+# Arguments:
+#   None
+#
+# Returns:
+#   0 - Always succeeds
+#
+# Outputs:
+#   STDOUT - Sync suggestion (if packages.nix changed)
+#######################################
+suggest_package_sync() {
+    local packages_nix="$HOME/.config/dotmarchy/packages.nix"
+    
+    # Check if packages.nix is tracked
+    if ! git --git-dir="$DOTBARE_DIR" ls-files --error-unmatch "$packages_nix" &>/dev/null; then
+        return 0
+    fi
+    
+    # Check if packages.nix was modified  in last commit
+    if git --git-dir="$DOTBARE_DIR" diff --name-only HEAD~1 HEAD 2>/dev/null | grep -q "packages.nix"; then
+        echo ""
+        printf "%b\n" "${BLD}${CYE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CNC}"
+        printf "%b\n" "${BLD}${CYE}  Package Configuration Updated${CNC}"
+        printf "%b\n" "${BLD}${CYE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CNC}"
+        echo ""
+        info "packages.nix fue actualizado en el último pull"
+        echo ""
+        printf "%b\n" "${BLD}${CBL}Recommended:${CNC} Sincroniza paquetes para instalar cambios"
+        echo ""
+        printf "%b\n" "  ${BLD}${CGR}./scripts/sync-packages.sh${CNC}"
+        echo ""
+        printf "%b\n" "${BLD}${CYE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CNC}"
+        sleep 2
+    fi
+}
+
+#######################################
 # Display success message
 # Arguments:
 #   $1: Final repository URL used
@@ -673,6 +735,9 @@ display_success() {
     
     # Suggest tracking packages.nix if using NIX
     suggest_packages_nix_tracking
+    
+    # Suggest package sync if packages.nix changed
+    suggest_package_sync
 }
 
 #######################################

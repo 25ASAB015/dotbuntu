@@ -1,59 +1,101 @@
 #!/usr/bin/env bash
-#==============================================================================
-#                            NIX HELPERS
-#==============================================================================
-# @file nix-helpers.sh
-# @brief Helper functions for NIX package manager operations
-# @description
-#   Utility functions for checking NIX installation, querying packages,
-#   and performing common NIX operations.
+#######################################
+# nix-helpers.sh - NIX utility functions
 #
-# Functions:
-#   nix_is_installed()       - Check if NIX is available
-#   nix_get_version()        - Get NIX version string
-#   nix_package_installed()  - Check if specific package is installed
-#   nix_cleanup()            - Run garbage collection
-#   nix_source_profile()     - Source NIX profile for current session
-#==============================================================================
+# Provides reusable helper functions for NIX package management operations
+# including installation checks, version queries, package management,
+# cleanup, and search capabilities.
+#
+# Usage:
+#   source helper/nix-helpers.sh
+#   if nix_is_installed; then
+#       nix_cleanup
+#   fi
+#
+# Globals:
+#   HOME - User's home directory
+#
+# Returns:
+#   N/A - This file is sourced, not executed
+#######################################
 
 # Prevent double sourcing
 [[ -n "${_NIX_HELPERS_SOURCED:-}" ]] && return 0
 declare -r _NIX_HELPERS_SOURCED=1
 
 #######################################
-# Check if NIX package manager is installed
+# Check if NIX is installed
+#
+# Verifies that the nix-env command is available in PATH.
+# This is the primary NIX package management tool.
+#
+# Globals:
+#   None
+#
+# Arguments:
+#   None
+#
 # Returns:
-#   0 if NIX is installed, 1 otherwise
+#   0 - NIX is installed and available
+#   1 - NIX is not installed
+#
+# Outputs:
+#   None
 #######################################
 nix_is_installed() {
     command -v nix-env &>/dev/null
 }
 
 #######################################
-# Get NIX version
-# Outputs:
-#   NIX version string (e.g., "nix (Nix) 2.18.1")
+# Get installed NIX version
+#
+# Retrieves and formats the currently installed NIX version string.
+# Returns empty string if NIX is not installed.
+#
+# Globals:
+#   None
+#
+# Arguments:
+#   None
+#
 # Returns:
-#   0 on success, 1 if NIX not installed
+#   0 - Version retrieved successfully
+#   1 - NIX not installed or version command failed
+#
+# Outputs:
+#   STDOUT - NIX version string (e.g., "nix-env (Nix) 2.18.0")
 #######################################
 nix_get_version() {
     if ! nix_is_installed; then
         return 1
     fi
+    
     nix-env --version 2>/dev/null | head -n1
 }
 
 #######################################
-# Check if a specific package is installed via NIX
+# Check if a specific NIX package is installed
+#
+# Queries the NIX profile to determine if a package with the given
+# name is currently installed in the user's environment.
+#
+# Globals:
+#   None
+#
 # Arguments:
-#   $1 - Package name to check
+#   $1 - Package name to check (required)
+#
 # Returns:
-#   0 if package is installed, 1 otherwise
+#   0 - Package is installed
+#   1 - Package is not installed or NIX unavailable
+#
+# Outputs:
+#   None
 #######################################
 nix_package_installed() {
-    local pkg_name="${1:-}"
+    local package_name="$1"
     
-    if [[ -z "$pkg_name" ]]; then
+    if [[ -z "$package_name" ]]; then
         return 1
     fi
     
@@ -61,43 +103,81 @@ nix_package_installed() {
         return 1
     fi
     
-    nix-env -q | grep -q "^${pkg_name}" 2>/dev/null
+    nix-env -q | grep -q "^${package_name}" 2>/dev/null
 }
 
 #######################################
-# Run NIX garbage collection
-# Removes old generations and unused packages
+# Perform NIX garbage collection
+#
+# Removes old generations and unused packages from the NIX store
+# to reclaim disk space. Optionally deletes all old generations.
+#
+# Globals:
+#   None
+#
+# Arguments:
+#   $1 - Optional: "-d" or "--delete-old" to remove all old generations
+#
 # Returns:
-#   0 on success, 1 on failure
+#   0 - Cleanup completed successfully
+#   1 - Cleanup failed or NIX not installed
+#
+# Outputs:
+#   STDOUT - Cleanup progress and space reclaimed
+#   STDERR - Error messages
 #######################################
 nix_cleanup() {
     if ! nix_is_installed; then
-        echo "NIX no está instalado"
+        echo "ERROR: NIX no está instalado" >&2
         return 1
     fi
     
+    local delete_old=""
+    if [[ "${1:-}" == "-d" ]] || [[ "${1:-}" == "--delete-old" ]]; then
+        delete_old="-d"
+    fi
+    
     echo "Ejecutando garbage collection de NIX..."
-    nix-collect-garbage -d
+    
+    if nix-collect-garbage $delete_old 2>&1; then
+        echo "Limpieza de NIX completada"
+        return 0
+    else
+        echo "ERROR: Falló la limpieza de NIX" >&2
+        return 1
+    fi
 }
 
 #######################################
-# Source NIX profile to make commands available
-# Useful when NIX was just installed or in fresh shells
+# Source NIX profile into current shell
+#
+# Loads NIX environment variables by sourcing the appropriate profile
+# script. Attempts both multi-user (daemon) and single-user locations.
+#
+# Globals:
+#   HOME - User's home directory
+#
+# Arguments:
+#   None
+#
 # Returns:
-#   0 if profile sourced, 1 if not found
+#   0 - Profile sourced successfully
+#   1 - Profile script not found
+#
+# Outputs:
+#   None
 #######################################
 nix_source_profile() {
-    # Multi-user installation (daemon)
-    if [[ -f "/nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh" ]]; then
-        # shellcheck source=/dev/null
-        source "/nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh"
-        return 0
-    fi
+    local daemon_profile="/nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh"
+    local user_profile="$HOME/.nix-profile/etc/profile.d/nix.sh"
     
-    # Single-user installation
-    if [[ -f "$HOME/.nix-profile/etc/profile.d/nix.sh" ]]; then
+    if [[ -f "$daemon_profile" ]]; then
         # shellcheck source=/dev/null
-        source "$HOME/.nix-profile/etc/profile.d/nix.sh"
+        source "$daemon_profile"
+        return 0
+    elif [[ -f "$user_profile" ]]; then
+        # shellcheck source=/dev/null
+        source "$user_profile"
         return 0
     fi
     
@@ -105,40 +185,177 @@ nix_source_profile() {
 }
 
 #######################################
-# List all NIX-installed packages
-# Outputs:
-#   List of installed package names
+# List all installed NIX packages
+#
+# Displays a list of packages currently installed in the user's
+# NIX profile, one per line.
+#
+# Globals:
+#   None
+#
+# Arguments:
+#   None
+#
 # Returns:
-#   0 on success
+#   0 - List retrieved successfully
+#   1 - NIX not installed or query failed
+#
+# Outputs:
+#   STDOUT - Package names, one per line
+#   STDERR - Error messages
 #######################################
 nix_list_packages() {
     if ! nix_is_installed; then
-        echo "NIX no está instalado"
+        echo "ERROR: NIX no está instalado" >&2
         return 1
     fi
     
-    nix-env -q
+    nix-env -q 2>/dev/null || {
+        echo "ERROR: Falló al listar paquetes NIX" >&2
+        return 1
+    }
 }
 
 #######################################
 # Search for packages in nixpkgs
+#
+# Queries the nixpkgs repository for packages matching the given
+# search term. Requires flakes to be enabled.
+#
+# Globals:
+#   None
+#
 # Arguments:
-#   $1 - Search term
+#   $1 - Search query (required)
+#
 # Returns:
-#   0 on success
+#   0 - Search completed successfully
+#   1 - Search failed or NIX not installed
+#
+# Outputs:
+#   STDOUT - Matching packages with descriptions
+#   STDERR - Error messages
 #######################################
 nix_search() {
-    local search_term="${1:-}"
+    local query="$1"
     
-    if [[ -z "$search_term" ]]; then
-        echo "Uso: nix_search <término>"
+    if [[ -z "$query" ]]; then
+        echo "ERROR: Se requiere un término de búsqueda" >&2
+        echo "Uso: nix_search <paquete>" >&2
         return 1
     fi
     
     if ! nix_is_installed; then
-        echo "NIX no está instalado"
+        echo "ERROR: NIX no está instalado" >&2
         return 1
     fi
     
-    nix search nixpkgs "$search_term"
+    echo "Buscando '$query' en nixpkgs..."
+    
+    if nix search nixpkgs "$query" 2>/dev/null; then
+        return 0
+    else
+        echo "ERROR: Falló la búsqueda (asegúrate de que flakes esté habilitado)" >&2
+        return 1
+    fi
+}
+
+#######################################
+# Get NIX store disk usage
+#
+# Calculates and displays the total disk space used by /nix/store.
+#
+# Globals:
+#   None
+#
+# Arguments:
+#   None
+#
+# Returns:
+#   0 - Usage retrieved successfully
+#   1 - /nix/store not found or du command failed
+#
+# Outputs:
+#   STDOUT - Disk usage in human-readable format (e.g., "5.2G")
+#   STDERR - Error messages
+#######################################
+nix_store_usage() {
+    if [[ ! -d "/nix/store" ]]; then
+        echo "ERROR: /nix/store no existe" >&2
+        return 1
+    fi
+    
+    du -sh /nix/store 2>/dev/null | awk '{print $1}' || {
+        echo "ERROR: Falló al calcular uso de disco" >&2
+        return 1
+    }
+}
+
+#######################################
+# Rollback to previous NIX generation
+#
+# Reverts the user's NIX profile to the previous generation,
+# undoing the most recent package installation/removal operation.
+#
+# Globals:
+#   None
+#
+# Arguments:
+#   None
+#
+# Returns:
+#   0 - Rollback successful
+#   1 - Rollback failed or NIX not installed
+#
+# Outputs:
+#   STDOUT - Rollback confirmation
+#   STDERR - Error messages
+#######################################
+nix_rollback() {
+    if ! nix_is_installed; then
+        echo "ERROR: NIX no está instalado" >&2
+        return 1
+    fi
+    
+    echo "Revirtiendo a la generación anterior de NIX..."
+    
+    if nix-env --rollback 2>&1; then
+        echo "Rollback completado exitosamente"
+        return 0
+    else
+        echo "ERROR: Falló el rollback" >&2
+        return 1
+    fi
+}
+
+#######################################
+# List NIX profile generations
+#
+# Displays a list of all available profile generations with
+# their creation dates and active status.
+#
+# Globals:
+#   None
+#
+# Arguments:
+#   None
+#
+# Returns:
+#   0 - List retrieved successfully
+#   1 - NIX not installed or command failed
+#
+# Outputs:
+#   STDOUT - Generation list with timestamps
+#   STDERR - Error messages
+#######################################
+nix_list_generations() {
+    if ! nix_is_installed; then
+        echo "ERROR: NIX no está instalado" >&2
+        return 1
+    fi
+    
+    nix-env --list-generations 2>/dev/null || {
+        echo "ERROR: Falló al listar generaciones" >&2
+        return 1
+    }
 }

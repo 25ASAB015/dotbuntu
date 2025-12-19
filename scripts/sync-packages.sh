@@ -1,16 +1,23 @@
 #!/usr/bin/env bash
 #######################################
-# sync-packages.sh - Apply packages.nix configuration
+# sync-packages.sh - Synchronize NIX packages from packages.nix
 #
-# Idempotent script to install packages defined in packages.nix.
-# Searches for packages.nix in multiple locations.
+# Idempotently applies package configuration from packages.nix file.
+# Searches multiple locations, verifies NIX installation, executes
+# package installation, and reports results.
 #
 # Usage:
 #   ./sync-packages.sh
 #
+# Globals:
+#   SCRIPT_DIR - Directory containing this script
+#   HELPER_DIR - Path to helper modules
+#   ERROR_LOG - Path to error log file
+#   DOTMARCHY_ERROR_LOG - Alternative error log path
+#
 # Returns:
-#   0 - Packages synced successfully
-#   1 - Sync failed or NIX not installed
+#   0 - Packages synchronized successfully
+#   1 - Synchronization failed
 #######################################
 
 set -Eeuo pipefail
@@ -24,105 +31,305 @@ readonly HELPER_DIR="${SCRIPT_DIR}/../helper"
 source "${HELPER_DIR}/load_helpers.sh"
 load_helpers "${HELPER_DIR}" colors logger nix-helpers
 
-# Ensure ERROR_LOG is set
+# Error log fallback
 : "${ERROR_LOG:=$HOME/.local/share/dotmarchy/install_errors.log}"
-export ERROR_LOG
+: "${DOTMARCHY_ERROR_LOG:=$ERROR_LOG}"
+export ERROR_LOG DOTMARCHY_ERROR_LOG
 
 #######################################
-# Locate packages.nix file
-# Returns: path to packages.nix or exits if not found
+# Find packages.nix configuration file
+#
+# Searches for packages.nix in multiple standard locations in priority order:
+# 1. ~/.config/dotmarchy/packages.nix (user config)
+# 2. ~/dotbuntu/packages.nix (repo root)
+# 3. Current script directory/../packages.nix (repo template)
+#
+# Globals:
+#   HOME - User's home directory
+#   SCRIPT_DIR - Script installation directory
+#
+# Arguments:
+#   None
+#
+# Returns:
+#   0 - packages.nix found
+#   1 - packages.nix not found in any location
+#
+# Outputs:
+#   STDOUT - Absolute path to packages.nix file
+#   STDERR - Error message if not found
 #######################################
 find_packages_nix() {
-    local locations=(
+    local search_paths=(
         "$HOME/.config/dotmarchy/packages.nix"
+        "$HOME/dotbuntu/packages.nix"
         "${SCRIPT_DIR}/../packages.nix"
-        "$HOME/.dotfiles/packages.nix"
-        "./packages.nix"
     )
     
-    for loc in "${locations[@]}"; do
-        if [[ -f "$loc" ]]; then
-            echo "$loc"
+    for path in "${search_paths[@]}"; do
+        if [[ -f "$path" ]]; then
+            echo "$path"
             return 0
         fi
     done
     
-    error "No se encontró packages.nix en las ubicaciones esperadas:"
-    for loc in "${locations[@]}"; do
-        echo "  - $loc"
-    done
+    echo "ERROR: packages.nix no encontrado en ninguna ubicación estándar" >&2
+    echo "Ubicaciones buscadas:" >&2
+    printf "  - %s\n" "${search_paths[@]}" >&2
     return 1
 }
 
 #######################################
-# Sync packages from packages.nix
+# Verify NIX installation and readiness
+#
+# Checks that NIX is installed, available in PATH, and the NIX store
+# is accessible. Provides specific error messages for each failure case.
+#
+# Globals:
+#   None
+#
+# Arguments:
+#   None
+#
+# Returns:
+#   0 - NIX is installed and ready
+#   1 - NIX not available or not functional
+#
+# Outputs:
+#   STDOUT - Verification progress messages
+#   STDERR - Specific error messages
 #######################################
-sync_packages() {
-    local packages_file
-    packages_file=$(find_packages_nix) || return 1
-    
-    info "Usando configuración: $packages_file"
-    
-    # Check NIX is installed
-    if ! nix_is_installed; then
-        error "NIX no está instalado. Ejecuta bootstrap-nix.sh primero"
+verify_nix_installed() {
+    if ! command -v nix-env &>/dev/null; then
+        echo "ERROR: nix-env no encontrado en PATH" >&2
+        echo "Instala NIX primero ejecutando: ./scripts/bootstrap-nix.sh" >&2
         return 1
     fi
     
-    local nix_version
-    nix_version=$(nix_get_version)
-    info "NIX version: $nix_version"
+    if [[ ! -d "/nix/store" ]]; then
+        echo "ERROR: /nix/store no existe (instalación NIX incompleta)" >&2
+        return 1
+    fi
     
-    # Install packages
-    info "Sincronizando paquetes (esto puede tardar unos minutos)..."
-    printf "%b\n" "${BLD}${CYE}Instalando paquetes desde $packages_file${CNC}"
+    if ! nix-env --version &>/dev/null; then
+        echo "ERROR: nix-env no responde correctamente" >&2
+        return 1
+    fi
     
-    local install_output
-    local install_status=0
+    return 0
+}
+
+#######################################
+# Count packages in packages.nix
+#
+# Parses the packages.nix file and counts the number of package
+# entries in the paths array. Used for progress reporting.
+#
+# Globals:
+#   None
+#
+# Arguments:
+#   $1 - Path to packages.nix file (required)
+#
+# Returns:
+#   0 - Count retrieved successfully
+#   1 - File not readable or parse error
+#
+# Outputs:
+#   STDOUT - Number of packages (integer)
+#   STDERR - Error messages
+#######################################
+count_packages() {
+    local packages_file="$1"
     
-    # Run nix-env to install packages
-    install_output=$(nix-env -iA myPackages -f "$packages_file" 2>&1) || install_status=$?
+    if [[ ! -f "$packages_file" ]]; then
+        echo "0"
+        return 1
+    fi
     
-    # Log output
-    echo "$install_output" | tee -a "$ERROR_LOG" >/dev/null
+    # Count non-comment, non-empty lines in paths array
+    local count
+    count=$(grep -v '^[[:space:]]*#' "$packages_file" | \
+            grep -v '^[[:space:]]*$' | \
+            grep -c '[a-zA-Z]' || echo "0")
     
-    if [[ $install_status -eq 0 ]]; then
-        success "Paquetes sincronizados exitosamente"
+    echo "$count"
+}
+
+#######################################
+# Synchronize packages from packages.nix
+#
+# Main synchronization function that:
+# 1. Validates packages.nix exists
+# 2. Verifies NIX installation
+# 3. Backs up error log (if needed)
+# 4. Executes nix-env installation
+# 5. Reports results and statistics
+#
+# Globals:
+#   ERROR_LOG - Path to error log file
+#
+# Arguments:
+#   $1 - Path to packages.nix file (required)
+#
+# Returns:
+#   0 - Synchronization successful
+#   1 - Synchronization failed
+#
+# Outputs:
+#   STDOUT - Synchronization progress and results
+#   STDERR - Error messages (also logged to ERROR_LOG)
+#######################################
+sync_packages() {
+    local packages_nix_path="$1"
+    
+    if [[ ! -f "$packages_nix_path" ]]; then
+        echo "ERROR: packages.nix no existe en: $packages_nix_path" >&2
+        return 1
+    fi
+    
+    info "Sincronizando paquetes desde: $packages_nix_path"
+    
+    # Count packages for reporting
+    local package_count
+    package_count=$(count_packages "$packages_nix_path")
+    info "Configuración contiene aproximadamente $package_count paquetes"
+    
+    # Ensure error log directory exists
+    local log_dir
+    log_dir=$(dirname "$ERROR_LOG")
+    if ! mkdir -p "$log_dir" 2>/dev/null; then
+        warn "No se pudo crear directorio de logs: $log_dir"
+    fi
+    
+    # Execute NIX package installation
+    info "Ejecutando nix-env -iA myPackages -f $packages_nix_path..."
+    echo "Esto puede tardar varios minutos si hay paquetes nuevos..." 
+    
+    local start_time
+    start_time=$(date +%s)
+    
+    if nix-env -iA myPackages -f "$packages_nix_path" 2>>"$ERROR_LOG"; then
+        local end_time
+        end_time=$(date +%s)
+        local duration=$((end_time - start_time))
         
-        # Count installed packages
-        local pkg_count
-        pkg_count=$(nix-env -q | wc -l)
-        info "Total de paquetes en el perfil: $pkg_count"
+        success "Paquetes sincronizados exitosamente (${duration}s)"
+        
+        # Show installed package count
+        local installed_count
+        installed_count=$(nix-env -q | wc -l)
+        info "Paquetes instalados en tu perfil NIX: $installed_count"
         
         return 0
     else
-        error "Error al sincronizar paquetes"
-        warn "Últimas líneas del error:"
-        echo "$install_output" | tail -5 | while IFS= read -r line; do
-            printf "  %b\n" "${CRE}$line${CNC}"
-        done || true
+        error "Falló la sincronización de paquetes"
+        error "Revisa el log de errores: $ERROR_LOG"
+        
+        # Show last few lines of error log
+        if [[ -f "$ERROR_LOG" ]]; then
+            echo "" >&2
+            echo "Últimas líneas del log de errores:" >&2
+            tail -n 10 "$ERROR_LOG" >&2
+        fi
         
         return 1
     fi
 }
 
 #######################################
-# Main function
+# Display post-sync instructions
+#
+# Shows helpful next steps after successful package synchronization,
+# including how to verify installation, manage packages, and track
+# changes in dotbare.
+#
+# Globals:
+#   None
+#
+# Arguments:
+#   None
+#
+# Returns:
+#   0 - Always succeeds
+#
+# Outputs:
+#   STDOUT - Instruction messages
+#######################################
+show_next_steps() {
+    echo ""
+    info "Próximos pasos:"
+    echo "  1. Verifica paquetes instalados: nix-env -q"
+    echo "  2. Añade más paquetes editando packages.nix"
+    echo "  3. Versiona en dotbare: dotbare add ~/.config/dotmarchy/packages.nix"
+    echo "  4. Si algo sale mal: nix-env --rollback"
+    echo ""
+    info "Documentación: docs/NIX_SETUP.md"
+}
+
+#######################################
+# Main orchestration function
+#
+# Coordinates the entire package synchronization process:
+# 1. Display welcome banner
+# 2. Verify NIX installation
+# 3. Locate packages.nix file
+# 4. Synchronize packages
+# 5. Display next steps
+#
+# Globals:
+#   BLD, CBL, CNC - Color codes for terminal output
+#
+# Arguments:
+#   None
+#
+# Returns:
+#   0 - Synchronization completed successfully
+#   1 - Synchronization failed at any step
+#
+# Outputs:
+#   STDOUT - Progress messages and results
+#   STDERR - Error messages
 #######################################
 main() {
     clear 2>/dev/null || true
-    logo "Sincronizar Paquetes NIX"
+    logo "NIX Package Synchronization"
     sleep 1
     
-    sync_packages || {
-        error "Fallo la sincronización de paquetes"
-        info "Revisa el log: $ERROR_LOG"
+    echo ""
+    info "Verificando instalación de NIX..."
+    
+    if ! verify_nix_installed; then
+        error "NIX no está instalado o no funciona correctamente"
         return 1
-    }
+    fi
+    
+    local nix_version
+    nix_version=$(nix-env --version | head -n1)
+    success "NIX disponible: $nix_version"
     
     echo ""
+    info "Buscando packages.nix..."
+    
+    local packages_nix_path
+    if ! packages_nix_path=$(find_packages_nix); then
+        error "No se pudo localizar packages.nix"
+info "Crea uno primero: cp packages.nix ~/.config/dotmarchy/"
+        return 1
+    fi
+    
+    success "Encontrado: $packages_nix_path"
+    
+    echo ""
+    if ! sync_packages "$packages_nix_path"; then
+        error "Falló la sincronización de paquetes"
+        return 1
+    fi
+    
+    show_next_steps
+    
     success "¡Sincronización completada!"
-    info "Tip: Ejecuta 'nix-env -q' para ver los paquetes instalados"
+    return 0
 }
 
 # Execute only if invoked directly
