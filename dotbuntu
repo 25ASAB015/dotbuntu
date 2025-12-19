@@ -246,7 +246,6 @@ main() {
         success "Configuración de Git completada."
     fi
 
-    #==========================================================================
     # PHASE 2: SYSTEM SETUP & DOTFILES (DOTMARCHY)
     #==========================================================================
     DOTMARCHY_PROCEED=0
@@ -255,28 +254,42 @@ main() {
             DOTMARCHY_PROCEED=1
         fi
     else
-        DOTMARCHY_PROCEED=1
+        # In non-interactive mode, only proceed if flags are set
+        if [[ "${INSTALL_EXTRAS:-0}" -eq 1 ]] || [[ "${SETUP_ENVIRONMENT:-0}" -eq 1 ]]; then
+            DOTMARCHY_PROCEED=1
+        fi
     fi
 
     if [[ "$DOTMARCHY_PROCEED" -eq 1 ]]; then
-        # Confirm dotmarchy checks
-        dotmarchy_initial_checks # from checks.sh
+        # Basic checks (not root, internet) - always needed
+        verify_not_root
+        verify_internet_connection
         
         # Show dotmarchy specific welcome and summary
         dotmarchy_welcome
         
-        # Phase 2.1: Dotbare
+        # Phase 2.1: Dotbare (doesn't require Arch Linux)
         configure_dotbare
         
-        # Phase 2.2: Core Operations
-        execute_core_operations
-        
-        # Phase 2.3: Extras
-        if [[ "${INSTALL_EXTRAS:-0}" -eq 1 ]]; then
-            execute_extras_operations
+        # Phase 2.2: Core Operations (requires Arch Linux)
+        # Only verify Arch if we're actually going to install packages
+        if command -v pacman >/dev/null 2>&1; then
+            execute_core_operations
+        else
+            warn "Saltando instalación de paquetes core (pacman no disponible)"
+            info "Esta funcionalidad requiere Arch Linux o una distribución basada en Arch"
         fi
         
-        # Phase 2.4: Environment Setup
+        # Phase 2.3: Extras (requires Arch Linux for some operations)
+        if [[ "${INSTALL_EXTRAS:-0}" -eq 1 ]]; then
+            if command -v pacman >/dev/null 2>&1; then
+                execute_extras_operations
+            else
+                warn "Saltando instalación de extras (pacman no disponible)"
+            fi
+        fi
+        
+        # Phase 2.4: Environment Setup (doesn't require Arch Linux)
         if [[ "${SETUP_ENVIRONMENT:-0}" -eq 1 ]]; then
             execute_setup_operations
         fi
