@@ -1,0 +1,311 @@
+#!/usr/bin/env bash
+#==============================================================================
+#                              DOTBUNTU
+#==============================================================================
+# @file dotbuntu
+# @brief Unified system configuration and dotfiles management tool
+# @description
+#   Consolidated tool for professional Git setup and dotfiles management.
+#   Combines functionality from gitconfig and dotmarchy.
+#
+# @usage
+#   ./dotbuntu [options] [REPO_URL]
+#
+# @options
+#   --non-interactive    Run without user prompts
+#   --auto-upload        Automatically upload keys to GitHub
+#   --extras             Install extra packages (npm, cargo, etc.)
+#   --setup-env          Setup environment (dirs, repos, shell)
+#   --verify             Run verification checks
+#   --repo URL           Override default dotfiles repository
+#   -v, --verbose        Enable verbose output
+#   -f, --force          Force operations without prompts
+#   --help, -h           Show help information
+#==============================================================================
+
+set -Eeuo pipefail
+
+#==============================================================================
+# SCRIPT LOCATION
+#==============================================================================
+
+# Determine script directory (resolves symlinks)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export SCRIPT_DIR
+
+#==============================================================================
+# SOURCE MODULES
+#==============================================================================
+
+# Source configuration defaults (consolidated)
+source "${SCRIPT_DIR}/config/defaults.sh"
+
+# Source core modules (from gitconfig)
+source "${SCRIPT_DIR}/scripts/core/colors.sh"
+source "${SCRIPT_DIR}/scripts/core/logger.sh"
+source "${SCRIPT_DIR}/scripts/core/validation.sh"
+source "${SCRIPT_DIR}/scripts/core/ui.sh"
+source "${SCRIPT_DIR}/scripts/core/common.sh"
+
+# Source dotmarchy helpers
+source "${SCRIPT_DIR}/helper/load_helpers.sh"
+load_helpers "${SCRIPT_DIR}/helper" utils checks prompts
+
+# Source feature modules (from gitconfig)
+source "${SCRIPT_DIR}/scripts/dependencies.sh"
+source "${SCRIPT_DIR}/scripts/ssh.sh"
+source "${SCRIPT_DIR}/scripts/gpg.sh"
+source "${SCRIPT_DIR}/scripts/git-config.sh"
+source "${SCRIPT_DIR}/scripts/github.sh"
+source "${SCRIPT_DIR}/scripts/finalize.sh"
+
+#==============================================================================
+# ARGUMENT PARSING
+#==============================================================================
+
+show_help() {
+    cat << EOF
+${COLORS[bold]}${COLORS[primary]}dotbuntu${COLORS[reset]} ${DOTBUNTU_VERSION}
+Unified system configuration and dotfiles management tool
+
+${COLORS[bold]}Usage:${COLORS[reset]}
+  ${0##*/} [OPTIONS] [REPO_URL]
+
+${COLORS[bold]}Options:${COLORS[reset]}
+  -h, --help          Show this help message and exit
+  --non-interactive   Run Git configuration without prompts
+  --auto-upload       Automatically upload keys to GitHub
+  --extras            Install extra packages (npm, cargo, pip, etc.)
+  --setup-env         Setup environment (directories, repos, shell config)
+  --verify            Run verification checks and exit
+  --repo URL          Override default dotfiles repository URL
+  -v, --verbose       Enable verbose output
+  -f, --force         Force operations without prompts
+
+${COLORS[bold]}Examples:${COLORS[reset]}
+  ${0##*/}                            # Standard Git & Core setup
+  ${0##*/} --extras --setup-env       # Full dev environment setup
+  ${0##*/} --repo git@github.com:u/d.git
+  ${0##*/} --verify                   # Run diagnostics
+EOF
+}
+
+parse_arguments() {
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --non-interactive)
+                INTERACTIVE_MODE=false
+                shift
+                ;;
+            --auto-upload)
+                AUTO_UPLOAD_KEYS=true
+                shift
+                ;;
+            --extras)
+                export INSTALL_EXTRAS=1
+                shift
+                ;;
+            --setup-env)
+                export SETUP_ENVIRONMENT=1
+                shift
+                ;;
+            --verify)
+                export VERIFY_MODE=1
+                shift
+                ;;
+            --repo)
+                [ -z "${2:-}" ] && { error "Opción --repo requiere un argumento"; exit 2; }
+                export REPO_URL="$2"
+                shift 2
+                ;;
+            -v|--verbose)
+                export VERBOSE=1
+                shift
+                ;;
+            -f|--force)
+                export FORCE=1
+                shift
+                ;;
+            --help|-h)
+                show_help
+                exit 0
+                ;;
+            -*)
+                error "Opción desconocida: $1"
+                echo "Usa --help para ver opciones disponibles"
+                exit 1
+                ;;
+            *)
+                export REPO_URL="$1"
+                shift
+                ;;
+        esac
+    done
+}
+
+#==============================================================================
+# MAIN FUNCTION
+#==============================================================================
+
+main() {
+    # Parse command-line arguments
+    parse_arguments "$@"
+    
+    # Initialize dotmarchy error log
+    if [[ -n "${DOTMARCHY_ERROR_LOG:-}" ]]; then
+        : > "${DOTMARCHY_ERROR_LOG}"
+    fi
+
+    # Handle verification mode
+    if [[ "${VERIFY_MODE:-0}" -eq 1 ]]; then
+        info "Iniciando modo de verificación..."
+        exec "${SCRIPT_DIR}/scripts/fverify"
+    fi
+
+    # Perform initial checks
+    initial_checks
+    welcome # This shows the logo and welcome message
+    
+    #==========================================================================
+    # PHASE 1: GIT & GITHUB PROFESSIONAL SETUP
+    #==========================================================================
+    if [[ "$INTERACTIVE_MODE" == "true" ]] && ask_yes_no "¿Deseas configurar Git, SSH y GPG de forma profesional?" "y"; then
+        log "=== INICIO DE CONFIGURACIÓN DE GIT ==="
+        
+        # Early GitHub CLI check
+        if [[ "$AUTO_UPLOAD_KEYS" == "true" ]]; then
+            if ! ensure_github_cli_ready "early"; then
+                exit 1
+            fi
+        fi
+        
+        # Initialize progress variables
+        TOTAL_STEPS=9
+        CURRENT_STEP=0
+        
+        # Dependency check
+        CURRENT_STEP=$((CURRENT_STEP + 1))
+        show_progress_bar $CURRENT_STEP $TOTAL_STEPS "${WORKFLOW_STEPS[$CURRENT_STEP]}"
+        check_dependencies
+        
+        # Setup directories
+        CURRENT_STEP=$((CURRENT_STEP + 1))
+        show_progress_bar $CURRENT_STEP $TOTAL_STEPS "${WORKFLOW_STEPS[$CURRENT_STEP]}"
+        setup_directories
+        
+        # Backup keys
+        CURRENT_STEP=$((CURRENT_STEP + 1))
+        show_progress_bar $CURRENT_STEP $TOTAL_STEPS "${WORKFLOW_STEPS[$CURRENT_STEP]}"
+        backup_existing_keys
+        
+        # User info
+        CURRENT_STEP=$((CURRENT_STEP + 1))
+        show_progress_bar $CURRENT_STEP $TOTAL_STEPS "${WORKFLOW_STEPS[$CURRENT_STEP]}"
+        collect_user_info
+        
+        # GPG logic
+        if [[ -z "${GENERATE_GPG:-}" || "$GENERATE_GPG" == "false" ]]; then
+            if ask_yes_no "¿Deseas generar también una llave GPG para firmar commits?" "n"; then
+                GENERATE_GPG="true"
+            fi
+        fi
+        
+        # Summary
+        show_changes_summary
+        
+        # SSH
+        CURRENT_STEP=$((CURRENT_STEP + 1))
+        show_progress_bar $CURRENT_STEP $TOTAL_STEPS "${WORKFLOW_STEPS[$CURRENT_STEP]}"
+        generate_ssh_key
+        
+        # GPG
+        if [[ "$GENERATE_GPG" == "true" ]]; then
+            CURRENT_STEP=$((CURRENT_STEP + 1))
+            show_progress_bar $CURRENT_STEP $TOTAL_STEPS "${WORKFLOW_STEPS[$CURRENT_STEP]}"
+            generate_gpg_key
+        fi
+        
+        # Git Config
+        CURRENT_STEP=$((CURRENT_STEP + 1))
+        show_progress_bar $CURRENT_STEP $TOTAL_STEPS "${WORKFLOW_STEPS[$CURRENT_STEP]}"
+        configure_git
+        
+        # Agent
+        CURRENT_STEP=$((CURRENT_STEP + 1))
+        show_progress_bar $CURRENT_STEP $TOTAL_STEPS "${WORKFLOW_STEPS[$CURRENT_STEP]}"
+        create_ssh_agent_script
+        
+        # Display/Upload
+        display_keys
+        maybe_upload_keys
+        
+        # Final Instructions for Phase 1
+        CURRENT_STEP=$((CURRENT_STEP + 1))
+        show_progress_bar $CURRENT_STEP $TOTAL_STEPS "${WORKFLOW_STEPS[$CURRENT_STEP]}"
+        show_final_instructions
+        
+        success "Configuración de Git completada."
+    fi
+
+    #==========================================================================
+    # PHASE 2: SYSTEM SETUP & DOTFILES (DOTMARCHY)
+    #==========================================================================
+    DOTMARCHY_PROCEED=0
+    if [[ "$INTERACTIVE_MODE" == "true" ]]; then
+        if ask_yes_no "¿Deseas proceder con la instalación de dotfiles y paquetes del sistema?" "y"; then
+            DOTMARCHY_PROCEED=1
+        fi
+    else
+        DOTMARCHY_PROCEED=1
+    fi
+
+    if [[ "$DOTMARCHY_PROCEED" -eq 1 ]]; then
+        # Confirm dotmarchy checks
+        dotmarchy_initial_checks # from checks.sh
+        
+        # Show dotmarchy specific welcome and summary
+        dotmarchy_welcome
+        
+        # Phase 2.1: Dotbare
+        configure_dotbare
+        
+        # Phase 2.2: Core Operations
+        execute_core_operations
+        
+        # Phase 2.3: Extras
+        if [[ "${INSTALL_EXTRAS:-0}" -eq 1 ]]; then
+            execute_extras_operations
+        fi
+        
+        # Phase 2.4: Environment Setup
+        if [[ "${SETUP_ENVIRONMENT:-0}" -eq 1 ]]; then
+            execute_setup_operations
+        fi
+        
+        dotmarchy_farewell
+    fi
+    
+    log "=== FIN DE SESIÓN EXITOSA ==="
+    echo ""
+    success "¡Dotbuntu completado exitosamente!"
+}
+
+#==============================================================================
+# SIGNAL HANDLING
+#==============================================================================
+
+cleanup() {
+    echo ""
+    warning "Script interrumpido por el usuario"
+    log "Script interrumpido por señal"
+    exit 130
+}
+
+trap cleanup SIGINT SIGTERM
+
+#==============================================================================
+# ENTRY POINT
+#==============================================================================
+
+main "$@"
+

@@ -248,7 +248,7 @@ is_installed() {
 # Example:
 #   initial_checks  # Run at start of main script
 #######################################
-initial_checks() {
+dotmarchy_initial_checks() {
     debug "Starting initial system checks"
     
     # Check 1: Verify not running as root

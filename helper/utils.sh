@@ -300,13 +300,13 @@ ensure_node_available() {
 #   ERROR_LOG, INSTALL_START_TIME
 #######################################
 
-dotmarchy_usage() {
+dotbuntu_usage() {
     cat << EOF
-${BLD}${CBL}dotmarchy${CNC} ${DOTMARCHY_VERSION}
+${BLD}${CBL}dotbuntu${CNC} ${DOTBUNTU_VERSION} (powered by dotmarchy)
 Modular dotfiles installation and system setup tool for Arch Linux
 
 ${BLD}Usage:${CNC}
-  ${SCRIPT_NAME} [OPTIONS] [REPO_URL]
+  dotbuntu [OPTIONS] [REPO_URL]
 
 ${BLD}Options:${CNC}
   -h, --help          Show this help message and exit
@@ -318,10 +318,10 @@ ${BLD}Options:${CNC}
   -f, --force         Force operations without prompts
 
 ${BLD}Examples:${CNC}
-  ${SCRIPT_NAME}
-  ${SCRIPT_NAME} --extras --setup-env
-  ${SCRIPT_NAME} --repo git@github.com:user/dotfiles.git
-  ${SCRIPT_NAME} --verify
+  dotbuntu
+  dotbuntu --extras --setup-env
+  dotbuntu --repo git@github.com:user/dotfiles.git
+  dotbuntu --verify
 
 ${BLD}Environment Variables:${CNC}
   REPO_URL            Override default repository URL
@@ -330,21 +330,15 @@ ${BLD}Environment Variables:${CNC}
   FORCE               Set to 1 to force operations
   VERBOSE             Set to 1 for verbose output
 
-${BLD}Exit Codes:${CNC}
-  0  Success
-  1  General failure
-  2  Invalid input
-  3  Missing dependencies
-
-For more information, visit: https://github.com/25asab015/dotfiles
+For more information, visit: https://github.com/25asab015/dotbuntu
 EOF
 }
 
-parse_arguments() {
+dotmarchy_parse_arguments() {
     while [[ $# -gt 0 ]]; do
         case "$1" in
             -h|--help)
-                dotmarchy_usage
+                dotbuntu_usage
                 exit "${EXIT_SUCCESS:-0}"
                 ;;
             --extras)
@@ -365,7 +359,7 @@ parse_arguments() {
             --repo)
                 [ -z "${2:-}" ] && {
                     log_error "Option --repo requires an argument"
-                    dotmarchy_usage
+                    dotbuntu_usage
                     exit "${EXIT_INVALID_INPUT:-2}"
                 }
                 export REPO_URL="$2"
@@ -384,7 +378,7 @@ parse_arguments() {
                 ;;
             -*)
                 log_error "Unknown option: $1"
-                dotmarchy_usage
+                dotbuntu_usage
                 exit "${EXIT_INVALID_INPUT:-2}"
                 ;;
             *)

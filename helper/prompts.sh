@@ -54,7 +54,7 @@ readonly DEFAULT_GEM_COUNT=1      # neovim
 # Arguments:
 #   $1: Message text to display below logo
 #######################################
-logo() {
+dotmarchy_logo() {
     local text="$1"
     printf "%b" "
    ▗▖                              ▗▖        
@@ -82,9 +82,9 @@ logo() {
 # Returns:
 #   0 if user confirms, exits 0 if user cancels
 #######################################
-welcome() {
+dotmarchy_welcome() {
     clear_screen
-    logo "Bienvenido a dotmarchy, $USER"
+    dotmarchy_logo "Bienvenido a dotmarchy, $USER"
     show_welcome_intro
     show_basic_operations
     show_extras_section
@@ -96,7 +96,7 @@ welcome() {
 #######################################
 # Farewell message with installation summary
 #######################################
-farewell() {
+dotmarchy_farewell() {
     local end_time
     local duration
     local minutes
@@ -370,7 +370,7 @@ format_repo_name() {
 #######################################
 
 print_farewell_banner() {
-    logo "Instalación completada"
+    dotmarchy_logo "Instalación completada"
 }
 
 print_completion_header() {
