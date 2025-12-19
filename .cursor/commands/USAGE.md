@@ -295,13 +295,29 @@ If you have OpenSpec changes, the AI will:
 - Link to proposal/design/tasks
 - Include implementation status
 
+## Commit Organization Examples
+
+For detailed examples of how the AI organizes commits, see:
+
+**[COMMIT-EXAMPLES.md](./COMMIT-EXAMPLES.md)**
+
+This document shows:
+- Real examples from NIX migration (5 commits)
+- Feature + Tests + Docs (4 commits)
+- Bug fix + Improvements (3 commits)
+- Large refactors (6+ commits)
+- What to do and what NOT to do
+
+**Key principle:** Always multiple logical commits, never one giant commit.
+
 ## Support
 
 For issues or questions:
 1. Check this guide
-2. Read `.cursorrules-git-workflow` for implementation details
-3. Verify GitHub CLI is working: `gh pr list`
-4. Ask in Cursor chat: "Help with /git-pr-merge"
+2. See `COMMIT-EXAMPLES.md` for commit organization patterns
+3. Read `.cursorrules-git-workflow` for implementation details
+4. Verify GitHub CLI is working: `gh pr list`
+5. Ask in Cursor chat: "Help with /git-pr-merge"
 
 ---
 
