@@ -59,10 +59,10 @@ readonly DEFAULT_GEM_COUNT=1      # neovim
 #######################################
 # Display ASCII logo with message
 # Arguments:
-#   $1: Message text to display below logo
+#   $1: Message text to display below logo (optional)
 #######################################
 show_logo() {
-    local text="$1"
+    local text="${1:-}"
     printf "%b" "
    ▗▖                              ▗▖        
    ▐▌      ▐▌                      ▐▌        
