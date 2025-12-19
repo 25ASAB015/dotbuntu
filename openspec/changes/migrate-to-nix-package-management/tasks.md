@@ -3,47 +3,47 @@
 ## Phase 1: Foundation - NIX Support (Week 1)
 
 ### 1.1 Create packages.nix Template
-- [ ] 1.1.1 Create `packages.nix` with current CORE_DEPENDENCIES equivalents
-- [ ] 1.1.2 Add DEFAULT_EXTRA_DEPENDENCIES equivalents from setup.conf
-- [ ] 1.1.3 Include language servers and dev tools
+- [x] 1.1.1 Create `packages.nix` with current CORE_DEPENDENCIES equivalents
+- [x] 1.1.2 Add DEFAULT_EXTRA_DEPENDENCIES equivalents from setup.conf
+- [x] 1.1.3 Include language servers and dev tools
 - [ ] 1.1.4 Test packages.nix syntax with `nix-instantiate --eval`
 - [ ] 1.1.5 Verify all packages exist in nixpkgs with `nix search`
 
 ### 1.2 Implement NIX Installation Script
-- [ ] 1.2.1 Create `scripts/bootstrap-nix.sh` with shebang and strict mode
-- [ ] 1.2.2 Add detection for existing NIX installation
-- [ ] 1.2.3 Implement Determinate Systems installer method
-- [ ] 1.2.4 Implement official NIX installer method
-- [ ] 1.2.5 Implement distro package method (pacman for Arch)
-- [ ] 1.2.6 Add interactive menu for installation method selection
+- [x] 1.2.1 Create `scripts/bootstrap-nix.sh` with shebang and strict mode
+- [x] 1.2.2 Add detection for existing NIX installation
+- [x] 1.2.3 Implement Determinate Systems installer method
+- [x] 1.2.4 Implement official NIX installer method
+- [x] 1.2.5 Implement distro package method (pacman for Arch)
+- [x] 1.2.6 Add interactive menu for installation method selection
 - [ ] 1.2.7 Test on Ubuntu (no NIX) and Arch (with/without NIX)
 
 ### 1.3 Create Package Sync Script
-- [ ] 1.3.1 Create `scripts/sync-packages.sh` 
-- [ ] 1.3.2 Implement `nix-env -iA` command construction
-- [ ] 1.3.3 Add error handling and logging
-- [ ] 1.3.4 Make script idempotent (safe to run multiple times)
-- [ ] 1.3.5 Add success/failure reporting with package counts
+- [x] 1.3.1 Create `scripts/sync-packages.sh` 
+- [x] 1.3.2 Implement `nix-env -iA` command construction
+- [x] 1.3.3 Add error handling and logging
+- [x] 1.3.4 Make script idempotent (safe to run multiple times)
+- [x] 1.3.5 Add success/failure reporting with package counts
 
 ### 1.4 Add NIX Helper Module
-- [ ] 1.4.1 Create `helper/nix-helpers.sh`
-- [ ] 1.4.2 Add function: `nix_is_installed()` - check if NIX available
-- [ ] 1.4.3 Add function: `nix_get_version()` - get NIX version
-- [ ] 1.4.4 Add function: `nix_package_installed()` - check package status
-- [ ] 1.4.5 Add function: `nix_cleanup()` - garbage collection helper
+- [x] 1.4.1 Create `helper/nix-helpers.sh`
+- [x] 1.4.2 Add function: `nix_is_installed()` - check if NIX available
+- [x] 1.4.3 Add function: `nix_get_version()` - get NIX version
+- [x] 1.4.4 Add function: `nix_package_installed()` - check package status
+- [x] 1.4.5 Add function: `nix_cleanup()` - garbage collection helper
 
 ### 1.5 Integrate with Main Entry Point
-- [ ] 1.5.1 Add `--nix` flag to `dotbuntu` CLI argument parser
-- [ ] 1.5.2 Conditional execution: if `--nix`, call bootstrap-nix → sync-packages
-- [ ] 1.5.3 Keep default behavior unchanged (old package managers)
-- [ ] 1.5.4 Add help text for `--nix` flag
+- [x] 1.5.1 Add `--nix` flag to `dotbuntu` CLI argument parser
+- [x] 1.5.2 Conditional execution: if `--nix`, call bootstrap-nix → sync-packages
+- [x] 1.5.3 Keep default behavior unchanged (old package managers)
+- [x] 1.5.4 Add help text for `--nix` flag
 
 ### 1.6 Documentation - NIX Setup Guide
-- [ ] 1.6.1 Create `docs/NIX_SETUP.md` with introduction
-- [ ] 1.6.2 Document installation methods (Determinate, official, distro)
-- [ ] 1.6.3 Add packages.nix format explanation with examples
-- [ ] 1.6.4 Include troubleshooting section
-- [ ] 1.6.5 Add FAQ (disk space, uninstall, package not found)
+- [x] 1.6.1 Create `docs/NIX_SETUP.md` with introduction
+- [x] 1.6.2 Document installation methods (Determinate, official, distro)
+- [x] 1.6.3 Add packages.nix format explanation with examples
+- [x] 1.6.4 Include troubleshooting section
+- [x] 1.6.5 Add FAQ (disk space, uninstall, package not found)
 
 ### 1.7 Testing Phase 1
 - [ ] 1.7.1 Test `--nix` flag on clean Ubuntu 22.04
@@ -55,16 +55,16 @@
 ## Phase 2: Integration with dotbare (Week 2)
 
 ### 2.1 Update dotbare Integration
-- [ ] 2.1.1 Modify `fdotbare` to suggest adding packages.nix to repo
-- [ ] 2.1.2 Add template packages.nix to dotbare initialization
-- [ ] 2.1.3 Update dotbare workflow docs to include packages.nix
+- [x] 2.1.1 Modify `fdotbare` to suggest adding packages.nix to repo
+- [x] 2.1.2 Add template packages.nix to dotbare initialization
+- [x] 2.1.3 Update dotbare workflow docs to include packages.nix
 
 ### 2.2 Unified Install Script
-- [ ] 2.2.1 Refactor `install.sh` to orchestrate NIX + dotbare
-- [ ] 2.2.2 Add interactive prompts: install NIX? clone dotfiles? 
-- [ ] 2.2.3 Handle first-time setup vs existing installation
-- [ ] 2.2.4 Add progress indicators for each step
-- [ ] 2.2.5 Implement error recovery (retry/skip/abort options)
+- [x] 2.2.1 Refactor `install.sh` to orchestrate NIX + dotbare
+- [x] 2.2.2 Add interactive prompts: install NIX? clone dotfiles? 
+- [x] 2.2.3 Handle first-time setup vs existing installation
+- [x] 2.2.4 Add progress indicators for each step
+- [x] 2.2.5 Implement error recovery (retry/skip/abort options)
 
 ### 2.3 Package Sync on Pull
 - [ ] 2.3.1 Create hook suggestion: sync-packages after `dotbare pull`
@@ -72,18 +72,18 @@
 - [ ] 2.3.3 Document manual sync workflow
 
 ### 2.4 Migration Guide
-- [ ] 2.4.1 Create `docs/MIGRATION.md`
-- [ ] 2.4.2 Document step-by-step migration from v1.x
-- [ ] 2.4.3 Add setup.conf → packages.nix conversion examples
-- [ ] 2.4.4 Include rollback instructions (how to return to v1.x)
-- [ ] 2.4.5 Add troubleshooting for common migration issues
+- [x] 2.4.1 Create `docs/MIGRATION.md`
+- [x] 2.4.2 Document step-by-step migration from v1.x
+- [x] 2.4.3 Add setup.conf → packages.nix conversion examples
+- [x] 2.4.4 Include rollback instructions (how to return to v1.x)
+- [x] 2.4.5 Add troubleshooting for common migration issues
 
 ### 2.5 Conversion Helper Script
-- [ ] 2.5.1 Create `scripts/convert-setup-conf.sh`
-- [ ] 2.5.2 Parse setup.conf arrays (EXTRA_DEPENDENCIES, etc.)
-- [ ] 2.5.3 Map known packages to nixpkgs equivalents
-- [ ] 2.5.4 Output packages.nix format
-- [ ] 2.5.5 Add warnings for unmapped packages
+- [x] 2.5.1 Create `scripts/convert-setup-conf.sh`
+- [x] 2.5.2 Parse setup.conf arrays (EXTRA_DEPENDENCIES, etc.)
+- [x] 2.5.3 Map known packages to nixpkgs equivalents
+- [x] 2.5.4 Output packages.nix format
+- [x] 2.5.5 Add warnings for unmapped packages
 
 ### 2.6 Testing Phase 2
 - [ ] 2.6.1 Test full workflow: install NIX → clone dotfiles → apply packages

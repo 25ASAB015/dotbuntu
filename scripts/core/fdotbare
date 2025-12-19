@@ -626,6 +626,40 @@ setup_environment() {
 }
 
 #######################################
+# Suggest tracking packages.nix in dotbare
+#######################################
+suggest_packages_nix_tracking() {
+    local packages_nix="$HOME/.config/dotmarchy/packages.nix"
+    
+    # Check if packages.nix exists
+    if [[ ! -f "$packages_nix" ]]; then
+        return 0
+    fi
+    
+    # Check if already tracked
+    if git --git-dir="$DOTBARE_DIR" ls-files --error-unmatch "$packages_nix" &>/dev/null; then
+        info "packages.nix already tracked in dotfiles"
+        return 0
+    fi
+    
+    echo ""
+    printf "%b\n" "${BLD}${CYE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CNC}"
+    printf "%b\n" "${BLD}${CYE}  NIX Package Configuration Detected${CNC}"
+    printf "%b\n" "${BLD}${CYE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CNC}"
+    echo ""
+    info "Found packages.nix at: ${CBL}$packages_nix${CNC}"
+    echo ""
+    printf "%b\n" "${BLD}${CBL}Recommended:${CNC} Track this file in dotbare to sync packages across machines"
+    echo ""
+    printf "%b\n" "  ${BLD}${CGR}dotbare add ~/.config/dotmarchy/packages.nix${CNC}"
+    printf "%b\n" "  ${BLD}${CGR}dotbare commit -m \"Add NIX package configuration\"${CNC}"
+    printf "%b\n" "  ${BLD}${CGR}dotbare push${CNC}"
+    echo ""
+    printf "%b\n" "${BLD}${CYE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CNC}"
+    sleep 3
+}
+
+#######################################
 # Display success message
 # Arguments:
 #   $1: Final repository URL used
@@ -636,6 +670,9 @@ display_success() {
     printf "%b\n" "${BLD}${CGR}Repository: ${CBL}${DOTBARE_DIR}${CNC}"
     printf "%b\n" "${BLD}${CGR}Remote: ${CBL}${url}${CNC}"
     sleep 2
+    
+    # Suggest tracking packages.nix if using NIX
+    suggest_packages_nix_tracking
 }
 
 #######################################
