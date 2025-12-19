@@ -26,6 +26,13 @@ if ! command -v log_error >/dev/null 2>&1; then
     }
 fi
 
+if [ -z "${ERROR_LOG:-}" ]; then
+    source "${HELPER_DIR}/set_variable.sh" || {
+        echo "ERROR: Cannot load set_variable.sh" >&2
+        exit 1
+    }
+fi
+
 #######################################
 # Global Variables Documentation
 # Available from dependencies:
@@ -329,6 +336,7 @@ ${BLD}${CBL}━━━━━━━━━━━━━━━━━━━━━━�
 }
 
 show_safety_section() {
+    local error_log_path="${ERROR_LOG:-$HOME/.local/share/dotbuntu/install_errors.log}"
     printf "%b" "${BLD}${CBL}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CNC}
 ${BLD}${CBL}  GARANTÍAS DE SEGURIDAD${CNC}
 ${BLD}${CBL}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CNC}
@@ -336,7 +344,7 @@ ${BLD}${CBL}━━━━━━━━━━━━━━━━━━━━━━�
   ${CGR}✓${CNC} NO requiere ni permite ejecución como root
   ${CGR}✓${CNC} NO modifica configuraciones críticas del sistema
   ${CGR}✓${CNC} Todos los cambios son reversibles (backups automáticos)
-  ${CGR}✓${CNC} Logging completo en: ${CBL}${ERROR_LOG}${CNC}
+  ${CGR}✓${CNC} Logging completo en: ${CBL}${error_log_path}${CNC}
 
 "
 }
@@ -386,6 +394,7 @@ ${CNC}\n"
 }
 
 print_operation_summary() {
+    local error_log_path="${ERROR_LOG:-$HOME/.local/share/dotbuntu/install_errors.log}"
     printf "%b" "${CGR}✓${CNC} ${BLD}Operaciones completadas:${CNC}\n"
     printf "%b" "  ${CGR}→${CNC} Sistema actualizado con ${BLD}pacman -Syu${CNC}\n"
     printf "%b" "  ${CGR}→${CNC} Repositorio ${BLD}Chaotic-AUR${CNC} configurado\n"
@@ -412,12 +421,12 @@ print_operation_summary() {
     printf "%b" "  ${CGR}→${CNC} Variables de entorno ${BLD}PATH${CNC} configuradas\n"
     printf "%b" "  ${CGR}→${CNC} Dotfiles clonados desde ${BLD}$(format_repo_name)${CNC}\n\n"
 
-    if [ -f "${ERROR_LOG}" ] && [ -s "${ERROR_LOG}" ]; then
+    if [ -f "${error_log_path}" ] && [ -s "${error_log_path}" ]; then
         local error_count
-        error_count=$(wc -l <"${ERROR_LOG}" 2>/dev/null || echo 0)
+        error_count=$(wc -l <"${error_log_path}" 2>/dev/null || echo 0)
         if [ "${error_count}" -gt 0 ]; then
             printf "%b" "${CYE}⚠${CNC} ${BLD}Advertencias encontradas: ${CYE}${error_count}${CNC}\n"
-            printf "%b" "  ${CBL}→${CNC} Ver detalles en: ${CBL}${ERROR_LOG}${CNC}\n\n"
+            printf "%b" "  ${CBL}→${CNC} Ver detalles en: ${CBL}${error_log_path}${CNC}\n\n"
         fi
     fi
 }
@@ -443,10 +452,11 @@ print_next_steps() {
 }
 
 print_resources() {
+    local error_log_path="${ERROR_LOG:-$HOME/.local/share/dotbuntu/install_errors.log}"
     printf "%b" "${BLD}${CBL}═══ RECURSOS ÚTILES ═══${CNC}\n\n"
     printf "%b" "  ${CBL}📖${CNC} Documentación: ${CBL}https://github.com/25ASAB015/dotmarchy${CNC}\n"
     printf "%b" "  ${CBL}🔍${CNC} Verificación:  ${CYE}dotmarchy --verify${CNC}\n"
-    printf "%b" "  ${CBL}📝${CNC} Log de errores: ${CBL}${ERROR_LOG}${CNC}\n"
+    printf "%b" "  ${CBL}📝${CNC} Log de errores: ${CBL}${error_log_path}${CNC}\n"
     printf "%b" "  ${CBL}⚙️${CNC}  Configuración:  ${CBL}~/.config/dotmarchy/setup.conf${CNC}\n\n"
     printf "%b" "${BLD}${CBL}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CNC}\n"
     printf "%b" "

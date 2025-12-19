@@ -28,7 +28,11 @@ readonly HELPER_DIR="${SCRIPT_DIR}/../../helper"
 # Source required helpers
 # shellcheck source=/dev/null
 source "${HELPER_DIR}/load_helpers.sh"
-load_helpers "${HELPER_DIR}" colors logger prompts utils
+load_helpers "${HELPER_DIR}" set_variable colors logger prompts utils
+
+# Ensure ERROR_LOG is always set (defensive default)
+: "${ERROR_LOG:=$HOME/.local/share/dotbuntu/install_errors.log}"
+export ERROR_LOG
 
 # Setup error trap
 trap on_error ERR
