@@ -2,10 +2,11 @@
 # shellcheck shell=bash
 # shfmt: -ln=bash
 #
-# fupdate - System update script for dotmarchy
+# fupdate - System update script for dotbuntu
 #
-# Updates the system using pacman -Syu. This is always executed as the first
-# core operation to ensure the system is up-to-date before installing packages.
+# Updates the system using the appropriate package manager:
+# - Arch Linux: pacman -Syu
+# - Ubuntu/Debian: apt update && apt upgrade
 #
 # @params
 # Globals:
@@ -20,13 +21,14 @@ set -Eeuo pipefail
 
 # Determine script directory
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-readonly mydir="$SCRIPT_DIR"
 readonly HELPER_DIR="${SCRIPT_DIR}/../../helper"
 
 # Source required helpers
 # shellcheck source=/dev/null
 source "${HELPER_DIR}/load_helpers.sh"
-load_helpers "${HELPER_DIR}" colors logger prompts utils
+load_helpers "${HELPER_DIR}" colors logger prompts
+# shellcheck source=/dev/null
+source "${HELPER_DIR}/package_manager.sh"
 
 # Setup error trap
 trap on_error ERR
@@ -37,10 +39,16 @@ trap on_error ERR
 #   Help text for fupdate
 #######################################
 function usage() {
-  echo -e "Usage: fupdate [-h]
+    local manager_name
+    manager_name=$(pkg_get_manager_name)
+    echo -e "Usage: fupdate [-h]
 
-Update system packages using pacman -Syu.
+Update system packages using $manager_name.
 This ensures the system is up-to-date before installing additional packages.
+
+Supported systems:
+  - Arch Linux (pacman -Syu)
+  - Ubuntu/Debian (apt update && apt upgrade)
 
 Optional arguments:
   -h, --help\t\tshow this help message and exit."
@@ -48,7 +56,7 @@ Optional arguments:
 
 #######################################
 # Main function - update system
-# Performs full system update with pacman
+# Performs full system update with the appropriate package manager
 #######################################
 function main() {
     # Parse arguments
@@ -61,11 +69,17 @@ function main() {
     logo "Actualizando el sistema"
     sleep 1
     
-    info "Actualizando sistema con pacman -Syu..."
+    local manager
+    manager=$(pkg_get_manager)
+    local manager_name
+    manager_name=$(pkg_get_manager_name)
+    
+    info "Gestor de paquetes detectado: $manager_name"
+    info "Actualizando sistema..."
     echo ""
     
-    # Run system update
-    if sudo pacman -Syu --noconfirm; then
+    # Run system update using abstraction layer
+    if pkg_upgrade; then
         echo ""
         printf "%b\n" "${BLD}${CGR}✓ Sistema actualizado correctamente!${CNC}"
     else

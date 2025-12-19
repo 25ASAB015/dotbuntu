@@ -479,16 +479,42 @@ configure_dotbare() {
 execute_core_operations() {
     info "Iniciando operaciones core..."
     
-    execute_core_script "fupdate" "critical"
-    execute_core_script "fchaotic" "critical"
+    # Source package_manager if not already loaded
+    local helper_dir="${HELPER_DIR:-$(dirname "${BASH_SOURCE[0]}")}"
+    if ! command -v pkg_get_manager >/dev/null 2>&1; then
+        # shellcheck source=/dev/null
+        source "${helper_dir}/package_manager.sh" 2>/dev/null || true
+    fi
     
+    local manager
+    manager=$(pkg_get_manager 2>/dev/null || echo "unknown")
+    
+    # Always run system update
+    execute_core_script "fupdate" "critical"
+    
+    # Arch-specific: Chaotic-AUR repository
+    if [[ "$manager" == "pacman" ]]; then
+        execute_core_script "fchaotic" "critical"
+    else
+        info "Saltando Chaotic-AUR (solo disponible en Arch Linux)"
+    fi
+    
+    # Install core dependencies (works on all distros)
     execute_core_script "fdeps" || {
         warn "Algunos paquetes oficiales fallaron, pero continuando..."
     }
     
-    execute_core_script "fchaotic-deps"
-    execute_core_script "faur"
+    # Arch-specific: Chaotic-AUR dependencies and AUR packages
+    if [[ "$manager" == "pacman" ]]; then
+        execute_core_script "fchaotic-deps"
+        execute_core_script "faur"
+    else
+        info "Saltando paquetes AUR (solo disponible en Arch Linux)"
+        # On Ubuntu, install dotbare via git clone (handled by fdotbare)
+        info "dotbare se instalará desde GitHub en la siguiente fase"
+    fi
     
+    # Configure Zsh (works on all distros)
     info "Configurando Zsh como shell predeterminada..."
     execute_core_script "fzsh" "critical"
 }

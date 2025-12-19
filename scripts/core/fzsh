@@ -4,44 +4,51 @@
 #
 # fzsh - Ensure Zsh is installed and set as default shell
 #
-# Installs Zsh if missing, adds it to /etc/shells when necessary, and switches
-# the user's login shell to Zsh. Designed to be idempotent and safe to run
-# multiple times.
+# Installs Zsh if missing using the appropriate package manager:
+# - Arch Linux: pacman
+# - Ubuntu/Debian: apt
+#
+# Adds it to /etc/shells when necessary, and switches the user's login shell
+# to Zsh. Designed to be idempotent and safe to run multiple times.
 
 set -Eeuo pipefail
 
 # Determine script directory
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-readonly mydir="$SCRIPT_DIR"
 readonly HELPER_DIR="${SCRIPT_DIR}/../../helper"
 
 # Source required helpers
 # shellcheck source=/dev/null
 source "${HELPER_DIR}/load_helpers.sh"
 load_helpers "${HELPER_DIR}" set_variable colors logger checks
+# shellcheck source=/dev/null
+source "${HELPER_DIR}/package_manager.sh"
 
 # Setup error trap
 trap on_error ERR
 
 #######################################
 # Install Zsh if it's missing
-# Uses pacman for installation and logs output to ERROR_LOG
+# Uses the appropriate package manager for the distribution
 #######################################
 ensure_zsh_installed() {
-    if is_installed "zsh"; then
+    if is_pkg_installed "zsh"; then
         debug "zsh ya está instalado"
         return 0
     fi
 
-    info "Instalando zsh (shell base)..."
+    local manager_name
+    manager_name=$(pkg_get_manager_name)
+    info "Instalando zsh usando $manager_name..."
+    
     local install_output
     local install_status=0
-    install_output=$(sudo pacman -S --noconfirm zsh 2>&1) || install_status=$?
-    echo "$install_output" >> "$ERROR_LOG"
+    install_output=$(pkg_install zsh 2>&1) || install_status=$?
+    echo "$install_output" >> "${ERROR_LOG:-/tmp/dotbuntu_errors.log}"
 
     if [ $install_status -ne 0 ]; then
         warn "No se pudo instalar zsh automáticamente"
-        log_error "Fallo instalando zsh con pacman"
+        log_error "Fallo instalando zsh"
         return 1
     fi
 
