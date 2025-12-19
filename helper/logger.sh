@@ -193,6 +193,47 @@ print_info() {
 }
 
 #######################################
+# Success message
+#
+# Displays success message in bold green color with checkmark.
+# Use for confirming successful completion of operations.
+#
+# Arguments:
+#   $*: Success message
+#
+# Outputs:
+#   STDOUT: Bold green message with ✓ symbol
+#
+# Example:
+#   success "Instalación completada exitosamente"
+#   success "Paquetes sincronizados correctamente"
+#######################################
+success() {
+    printf "%b✓ %s%b\n" "${BLD}${CGR}" "$*" "${CNC}"
+}
+
+#######################################
+# Error message (short form)
+#
+# Displays error message in bold red color with X mark to stderr.
+# This is a simplified error function that just displays the message
+# without logging to file (use log_error() for full error logging).
+#
+# Arguments:
+#   $*: Error message
+#
+# Outputs:
+#   STDERR: Bold red message with ✗ symbol
+#
+# Example:
+#   error "Archivo no encontrado"
+#   error "Falló la conexión al servidor"
+#######################################
+error() {
+    printf "%b✗ %s%b\n" "${BLD}${CRE}" "$*" "${CNC}" >&2
+}
+
+#######################################
 # Warning message
 #
 # Displays warning message in bold yellow. Use for non-critical issues
