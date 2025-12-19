@@ -172,41 +172,15 @@ verify_internet_connection() {
 # Check if pacman package manager is available
 #
 # Verifies that pacman is installed and accessible in PATH.
-# This indicates the system is Arch Linux or an Arch-based distro.
-#
-# Returns:
-#   0: Pacman is available
-#   1: Pacman not found
-#######################################
-has_pacman() {
-    command -v pacman >/dev/null 2>&1
-}
+# REMOVED: has_pacman() - replaced by pkg_get_manager() in package_manager.sh
+# REMOVED: verify_arch_linux() - no longer needed with multi-distro support
+# See package_manager.sh for the new multi-distro abstraction layer
 
 #######################################
-# Verify system is Arch Linux based
+# Check if a package is installed (legacy - uses pacman)
 #
-# Ensures the script is running on an Arch Linux system by checking
-# for the presence of pacman package manager.
-#
-# Returns:
-#   0: Arch Linux detected
-#
-# Side Effects:
-#   - Exits with code 1 if not Arch Linux
-#######################################
-verify_arch_linux() {
-    if ! has_pacman; then
-        log_error "System is not Arch Linux (pacman not found)"
-        printf "%b\n" "${BLD}${CRE}Este script está diseñado para Arch Linux${CNC}" >&2
-        printf "%b\n" "${CYE}Se requiere pacman como gestor de paquetes${CNC}" >&2
-        exit "$EXIT_FAILURE"
-    fi
-    
-    debug "Arch Linux detected (pacman available)"
-}
-
-#######################################
-# Check if a package is installed (pacman)
+# NOTE: Prefer is_pkg_installed() from package_manager.sh for multi-distro support.
+# This function is kept for backward compatibility with existing scripts.
 #
 # Arguments:
 #   $1: Package name to check
@@ -220,65 +194,22 @@ is_installed() {
     
     if [ -z "$package" ]; then
         debug "is_installed called with empty package name"
-        return "$EXIT_FAILURE"
+        return "${EXIT_FAILURE:-1}"
     fi
     
-    pacman -Qq "$package" >/dev/null 2>&1
+    # Try pacman first (Arch), then dpkg (Debian/Ubuntu)
+    if command -v pacman >/dev/null 2>&1; then
+        pacman -Qq "$package" >/dev/null 2>&1
+    elif command -v dpkg >/dev/null 2>&1; then
+        dpkg -l "$package" 2>/dev/null | grep -q "^ii"
+    else
+        # Fallback: check if command exists
+        command -v "$package" >/dev/null 2>&1
+    fi
 }
 
-#######################################
-# Perform all initial system checks
-#
-# Runs comprehensive validation of system requirements before
-# allowing installation to proceed. This is the main entry point
-# for system validation and should be called early in the main script.
-#
-# Checks performed:
-#   1. User is not root
-#   2. Internet connection available
-#   3. Running on Arch Linux (pacman present)
-#
-# Returns:
-#   0: All checks passed
-#
-# Side Effects:
-#   - Exits with code 1 if any check fails
-#   - Logs all check results
-#
-# Example:
-#   initial_checks  # Run at start of main script
-#######################################
-dotmarchy_initial_checks() {
-    debug "Starting initial system checks"
-    
-    # Check 1: Verify not running as root
-    verify_not_root
-    
-    # Check 2: Verify internet connection
-    verify_internet_connection
-    
-    # Check 3: Verify Arch Linux system
-    verify_arch_linux
-    
-    debug "All initial checks passed"
-    return "$EXIT_SUCCESS"
-}
+# REMOVED: dotmarchy_initial_checks() - logic now inline in dotbuntu main script
+# Use verify_not_root() and verify_internet_connection() directly instead.
 
 # Mark as loaded
 DOTMARCHY_CHECKS_LOADED=1
-
-#######################################
-# MODULARITY NOTE:
-#
-# This module provides system validation and package checking
-# functionality specific to Arch Linux systems. It should not
-# be confused with general utilities in utils.sh.
-#
-# Relationship to other helpers:
-#   - Depends on: colors.sh, logger.sh
-#   - Used by: Main installation scripts
-#   - Complements: utils.sh (general utilities)
-#
-# If other scripts need similar validation logic, they should
-# use this module rather than reimplementing checks.
-#######################################
