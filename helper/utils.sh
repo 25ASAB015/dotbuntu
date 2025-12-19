@@ -483,11 +483,11 @@ configure_dotbare() {
 execute_core_operations() {
     info "Iniciando operaciones core..."
     
-    # Source package_manager if not already loaded
+    # Source package_manager if not already loaded (LEGACY MODE)
     local helper_dir="${HELPER_DIR:-$(dirname "${BASH_SOURCE[0]}")}"
     if ! command -v pkg_get_manager >/dev/null 2>&1; then
         # shellcheck source=/dev/null
-        source "${helper_dir}/package_manager.sh" 2>/dev/null || true
+        source "${helper_dir}/../scripts/deprecated/package_manager.sh" 2>/dev/null || true
     fi
     
     local manager
