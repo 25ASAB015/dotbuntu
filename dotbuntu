@@ -1,17 +1,15 @@
 #!/usr/bin/env bash
-#==============================================================================
-#                              DOTBUNTU
-#==============================================================================
-# @file dotbuntu
-# @brief Unified system configuration and dotfiles management tool
-# @description
-#   Consolidated tool for professional Git setup and dotfiles management.
-#   Combines functionality from gitconfig and dotmarchy.
+#######################################
+# dotbuntu - Unified system configuration and dotfiles management tool
 #
-# @usage
+# Consolidated tool for professional Git setup and dotfiles management.
+# Combines functionality from gitconfig (Git/SSH/GPG configuration) and
+# dotmarchy (dotfiles and package management).
+#
+# Usage:
 #   ./dotbuntu [options] [REPO_URL]
 #
-# @options
+# Options:
 #   --non-interactive    Run without user prompts
 #   --auto-upload        Automatically upload keys to GitHub
 #   --extras             Install extra packages (npm, cargo, etc.)
@@ -21,48 +19,81 @@
 #   -v, --verbose        Enable verbose output
 #   -f, --force          Force operations without prompts
 #   --help, -h           Show help information
-#==============================================================================
+#
+# @author: dotbuntu
+# @version: 1.0.0
+#######################################
 
 set -Eeuo pipefail
 
-#==============================================================================
-# SCRIPT LOCATION
-#==============================================================================
-
-# Determine script directory (resolves symlinks)
+#######################################
+# Script Location
+#
+# Determine script directory, resolving symlinks for reliable path resolution.
+#######################################
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export SCRIPT_DIR
 
-#==============================================================================
-# SOURCE MODULES
-#==============================================================================
+#######################################
+# Module Loading
+#
+# Source all required modules in dependency order:
+# 1. Configuration (defaults.sh)
+# 2. Core utilities (colors, logger, validation, ui, common)
+# 3. Helper modules (via dynamic loader)
+# 4. Feature modules (dependencies, ssh, gpg, git-config, github, finalize)
+#######################################
 
 # Source configuration defaults (consolidated)
+# shellcheck source=config/defaults.sh
 source "${SCRIPT_DIR}/config/defaults.sh"
 
 # Source core modules (from gitconfig)
+# shellcheck source=scripts/core/colors.sh
 source "${SCRIPT_DIR}/scripts/core/colors.sh"
+# shellcheck source=scripts/core/logger.sh
 source "${SCRIPT_DIR}/scripts/core/logger.sh"
+# shellcheck source=scripts/core/validation.sh
 source "${SCRIPT_DIR}/scripts/core/validation.sh"
+# shellcheck source=scripts/core/ui.sh
 source "${SCRIPT_DIR}/scripts/core/ui.sh"
+# shellcheck source=scripts/core/common.sh
 source "${SCRIPT_DIR}/scripts/core/common.sh"
 
-# Source dotmarchy helpers
+# Source dotmarchy helpers via dynamic loader
+# shellcheck source=helper/load_helpers.sh
 source "${SCRIPT_DIR}/helper/load_helpers.sh"
 load_helpers "${SCRIPT_DIR}/helper" utils checks prompts
 
 # Source feature modules (from gitconfig)
+# shellcheck source=scripts/dependencies.sh
 source "${SCRIPT_DIR}/scripts/dependencies.sh"
+# shellcheck source=scripts/ssh.sh
 source "${SCRIPT_DIR}/scripts/ssh.sh"
+# shellcheck source=scripts/gpg.sh
 source "${SCRIPT_DIR}/scripts/gpg.sh"
+# shellcheck source=scripts/git-config.sh
 source "${SCRIPT_DIR}/scripts/git-config.sh"
+# shellcheck source=scripts/github.sh
 source "${SCRIPT_DIR}/scripts/github.sh"
+# shellcheck source=scripts/finalize.sh
 source "${SCRIPT_DIR}/scripts/finalize.sh"
 
-#==============================================================================
-# ARGUMENT PARSING
-#==============================================================================
-
+#######################################
+# Display help information
+#
+# Shows usage, options, and examples for the dotbuntu tool.
+#
+# Globals:
+#   COLORS - Associative array of color codes (from defaults.sh)
+#   DOTBUNTU_VERSION - Version string (from defaults.sh)
+#
+# Returns:
+#   0 - Always succeeds
+#
+# Outputs:
+#   STDOUT - Help text with color formatting
+#######################################
 show_help() {
     printf "%b\n" "${COLORS[bold]}${COLORS[primary]}dotbuntu${COLORS[reset]} ${DOTBUNTU_VERSION}"
     printf "%b\n" "Unified system configuration and dotfiles management tool"
@@ -88,6 +119,36 @@ show_help() {
     printf "%b\n" "  ${0##*/} --verify                   # Run diagnostics"
 }
 
+#######################################
+# Parse command-line arguments
+#
+# Processes all CLI flags and sets corresponding global variables.
+# Exits with appropriate code for invalid input or help request.
+#
+# Globals:
+#   INTERACTIVE_MODE - Set to false with --non-interactive
+#   AUTO_UPLOAD_KEYS - Set to true with --auto-upload
+#   INSTALL_EXTRAS - Set to 1 with --extras
+#   SETUP_ENVIRONMENT - Set to 1 with --setup-env
+#   VERIFY_MODE - Set to 1 with --verify
+#   REPO_URL - Set with --repo or positional argument
+#   VERBOSE - Set to 1 with -v/--verbose
+#   FORCE - Set to 1 with -f/--force
+#
+# Arguments:
+#   $@ - Command-line arguments
+#
+# Returns:
+#   0 - Arguments parsed successfully
+#
+# Outputs:
+#   STDERR - Error messages for invalid options
+#
+# Side Effects:
+#   Exits with code 0 for --help
+#   Exits with code 1 for unknown options
+#   Exits with code 2 for missing required argument
+#######################################
 parse_arguments() {
     while [[ $# -gt 0 ]]; do
         case $1 in
@@ -112,7 +173,7 @@ parse_arguments() {
                 shift
                 ;;
             --repo)
-                [ -z "${2:-}" ] && { error "Opción --repo requiere un argumento"; exit 2; }
+                [[ -z "${2:-}" ]] && { error "Opción --repo requiere un argumento"; exit 2; }
                 export REPO_URL="$2"
                 shift 2
                 ;;
@@ -141,10 +202,33 @@ parse_arguments() {
     done
 }
 
-#==============================================================================
-# MAIN FUNCTION
-#==============================================================================
-
+#######################################
+# Main orchestration function
+#
+# Coordinates the two-phase execution flow:
+# Phase 1: Dotfiles & System Setup (dotmarchy functionality)
+# Phase 2: Git & GitHub Professional Setup (gitconfig functionality)
+#
+# Globals:
+#   INTERACTIVE_MODE - Controls whether to prompt user
+#   VERIFY_MODE - If 1, run verification and exit
+#   INSTALL_EXTRAS - If 1, install extra packages
+#   SETUP_ENVIRONMENT - If 1, setup development environment
+#   AUTO_UPLOAD_KEYS - If true, auto-upload keys to GitHub
+#   SCRIPT_DIR - Directory containing this script
+#   DOTMARCHY_ERROR_LOG - Path to error log file
+#
+# Arguments:
+#   $@ - Command-line arguments (passed to parse_arguments)
+#
+# Returns:
+#   0 - Success
+#   1 - Failure
+#
+# Outputs:
+#   STDOUT - Progress messages and prompts
+#   STDERR - Error messages
+#######################################
 main() {
     # Parse command-line arguments
     parse_arguments "$@"
@@ -168,7 +252,7 @@ main() {
     #==========================================================================
     # PHASE 1: DOTFILES & SYSTEM SETUP (DOTMARCHY)
     #==========================================================================
-    DOTMARCHY_PROCEED=0
+    local DOTMARCHY_PROCEED=0
     if [[ "$INTERACTIVE_MODE" == "true" ]]; then
         if ask_yes_no "¿Deseas proceder con la instalación de dotfiles y paquetes del sistema?" "y"; then
             DOTMARCHY_PROCEED=1
@@ -343,10 +427,19 @@ main() {
     success "¡Dotbuntu completado exitosamente!"
 }
 
-#==============================================================================
-# SIGNAL HANDLING
-#==============================================================================
-
+#######################################
+# Handle interrupt signals
+#
+# Cleanup function triggered by SIGINT (Ctrl+C) or SIGTERM.
+# Displays user-friendly message and exits with code 130.
+#
+# Returns:
+#   130 - Standard exit code for SIGINT
+#
+# Outputs:
+#   STDOUT - Blank line for formatting
+#   STDOUT - Warning message about interruption
+#######################################
 cleanup() {
     echo ""
     warning "Script interrumpido por el usuario"
@@ -354,11 +447,15 @@ cleanup() {
     exit 130
 }
 
+# Register signal handlers
 trap cleanup SIGINT SIGTERM
 
-#==============================================================================
-# ENTRY POINT
-#==============================================================================
-
-main "$@"
-
+#######################################
+# Entry Point Guard
+#
+# Ensures main() is only called when script is executed directly,
+# not when sourced by another script.
+#######################################
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    main "$@"
+fi
